@@ -205,6 +205,7 @@ func Route(ctx context.Context, in Input, d Deps) (*Output, stats.Record) {
 	rec.Decision = dec
 	cfg := *d.Config
 	cfg.MainModel = SessionTier(in, d.Config)
+	cfg.EscalationsUsed = escalations(in.SessionID)
 	text := router.Context(dec, &cfg)
 	if hint := fileHint(ctx, in, d); hint != "" {
 		if text == "" {
@@ -217,7 +218,12 @@ func Route(ctx context.Context, in Input, d Deps) (*Output, stats.Record) {
 	if text == "" {
 		return nil, rec
 	}
-	if strings.Contains(text, "- Model:") {
+	switch {
+	case strings.Contains(text, "- Model:") && strings.Contains(text, "Do this FIRST"):
+		rec.Advice = append(rec.Advice, "escalate")
+	case strings.Contains(text, "- Model:") && strings.Contains(text, "already escalated"):
+		rec.Advice = append(rec.Advice, "escalate_capped")
+	case strings.Contains(text, "- Model:"):
 		rec.Advice = append(rec.Advice, "tier")
 	}
 	if strings.Contains(text, "- Skill:") {
@@ -294,9 +300,9 @@ func Features(cfg *config.Config, in Input) []Feature {
 	cheap := main != "" && main != "opus" && main != "fable"
 	return []Feature{
 		{"routing (skill, files, bulk, memory hints)", "jev", routing, "/jev on|off"},
-		{"escalate to a stronger subagent", "↑", routing && cfg.EscalateOn() && cheap, fmt.Sprintf("needs a session cheaper than opus; confidence ≥ %.2f", cfg.EscalateConfidence)},
+		{"escalate to a stronger subagent", "↑", routing && cfg.EscalateOn() && cheap, fmt.Sprintf("needs a session cheaper than opus; confidence ≥ %.2f; at most %d per session", cfg.EscalateConfidence, cfg.EscalateMaxPerSession)},
 		{"delegate down to a cheaper subagent", "↓", routing && cfg.Delegate, "off by default (measured +14% cost)"},
-		{"review finished turns (Stop)", "review", routing && cfg.VerifyOn() && cheap, fmt.Sprintf("escalates to %s at risk ≥ %.2f", cfg.VerifyAgent, cfg.VerifyThreshold)},
+		{"review finished coding turns (Stop)", "review", routing && cfg.VerifyOn() && cheap, fmt.Sprintf("to %s at risk ≥ %.2f; at most %d per session", cfg.VerifyAgent, cfg.VerifyThreshold, cfg.VerifyMaxPerSession)},
 		{"guard risky commands/writes (PreToolUse)", "🛡", cfg.GuardOn(), fmt.Sprintf("asks you at risk ≥ %.2f; works even with routing off", cfg.GuardThreshold)},
 		{"screen fetched content for injection (PostToolUse)", "inject", cfg.InjectionOn(), fmt.Sprintf("warns at p ≥ %.2f", cfg.InjectionThreshold)},
 		{"likely-relevant files hint", "files", routing && cfg.FindFilesOn(), "in project folders up to 1500 files"},
@@ -449,7 +455,7 @@ func stop(in Input, cfg *config.Config) *Output {
 		return nil
 	}
 	// Reviewing only pays when the session is cheaper than the reviewer.
-	if main, agent := SessionTier(in, cfg), router.TierOf(cfg.VerifyAgent, cfg); main == "" || agent == "" || tierRank(main, cfg) >= tierRank(agent, cfg) {
+	if main := SessionTier(in, cfg); main == "" || tierRank(main, cfg) >= tierRank(cfg.VerifyTier, cfg) {
 		return nil
 	}
 	turn, _ := verify.ReadTurn(in.TranscriptPath)
@@ -460,7 +466,13 @@ func stop(in Input, cfg *config.Config) *Output {
 		logx.Printf("hook: verify: no transcript turn for %s", in.SessionID)
 		return nil
 	}
-	if strings.HasPrefix(strings.TrimSpace(turn.Request), "/") {
+	if strings.HasPrefix(strings.TrimSpace(turn.Request), "/") || router.IsSystemMessage(turn.Request) {
+		return nil
+	}
+	// Only finished coding work is reviewed: not investigation or answers,
+	// not turns that already handed the work to a subagent, and at most
+	// VerifyMaxPerSession escalations per session.
+	if !turn.EditedCode() || turn.HandedOff() || reviewEscalations(in.SessionID) >= cfg.VerifyMaxPerSession {
 		return nil
 	}
 	if !First(Input{SessionID: in.SessionID, Prompt: "stop\x00" + turn.Request + turn.Final}) {
@@ -488,6 +500,38 @@ func stop(in Input, cfg *config.Config) *Output {
 	}
 	rec["escalated"] = true
 	return &Output{Decision: "block", Reason: verify.Escalation(v, cfg.VerifyAgent)}
+}
+
+// escalations counts the routing escalations already advised in a session.
+func escalations(session string) int {
+	recs, _ := stats.Load(paths.DecisionLog())
+	n := 0
+	for _, r := range recs {
+		if r.SessionID != session {
+			continue
+		}
+		for _, a := range r.Advice {
+			if a == "escalate" {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+func reviewEscalations(session string) int {
+	b, err := os.ReadFile(filepath.Join(paths.StateDir(), "verify.jsonl"))
+	if err != nil {
+		return 0
+	}
+	n := 0
+	needle := `"session_id":"` + session + `"`
+	for _, l := range strings.Split(string(b), "\n") {
+		if strings.Contains(l, needle) && strings.Contains(l, `"escalated":true`) {
+			n++
+		}
+	}
+	return n
 }
 
 // First reports whether this is the first jevcc hook run for this prompt, so
@@ -567,7 +611,7 @@ func Main(stdin io.Reader, stdout io.Writer) (code int) {
 	out, ok := Command(in, cfg)
 	if !ok {
 		p := strings.TrimSpace(in.Prompt)
-		if p == "" || strings.HasPrefix(p, "/") || !Enabled(cfg, in.SessionID) {
+		if p == "" || strings.HasPrefix(p, "/") || router.IsSystemMessage(p) || !Enabled(cfg, in.SessionID) {
 			return 0
 		}
 		if cfg.APIKey == "" {

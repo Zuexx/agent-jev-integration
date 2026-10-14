@@ -174,3 +174,15 @@ func TestLargeRosterUsesChunks(t *testing.T) {
 		t.Fatalf("%+v %v calls=%d", d, err, len(f.calls))
 	}
 }
+
+func TestEscalationCap(t *testing.T) {
+	t.Setenv("JEVCC_HOME", t.TempDir())
+	c, _ := config.Load()
+	c.MainModel = "haiku"
+	c.EscalationsUsed = c.EscalateMaxPerSession
+	hard := &Decision{Tier: "opus", TierConf: 0.9, TierProbs: map[string]float64{"opus": 0.9}}
+	got := Context(hard, c)
+	if strings.Contains(got, `"jev-opus"`) || !strings.Contains(got, "already escalated 3 times") || !strings.Contains(got, "/model opus") {
+		t.Fatal(got)
+	}
+}

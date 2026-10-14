@@ -54,3 +54,10 @@ func TestCheck(t *testing.T) {
 		t.Fatal("escalation text")
 	}
 }
+
+func TestHedgingAloneDoesNotEscalate(t *testing.T) {
+	v, _ := Check(context.Background(), fake{"complete": 0.9, "unverified": 0.1, "failing": 0.1, "hedging": 0.99, "untested_rules": 0.1}, Turn{}, 0.5)
+	if len(v.Reasons) != 0 || v.Risk > 0.11 {
+		t.Fatalf("%+v", v)
+	}
+}

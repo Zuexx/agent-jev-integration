@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -170,5 +171,74 @@ func TestStatuslineCommandAndStatus(t *testing.T) {
 		if !strings.Contains(out.Reason, want) {
 			t.Fatalf("missing %q in\n%s", want, out.Reason)
 		}
+	}
+}
+
+func TestSystemMessagesAreNotRouted(t *testing.T) {
+	setup(t)
+	t.Setenv("JEVCC_MODE", "on")
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++ }))
+	defer srv.Close()
+	t.Setenv("TYPESAFE_ENDPOINT", srv.URL)
+	for _, p := range []string{"<agent-message from=\"a1\">\n[Subagent hand-back] done", "<task-notification>\n<task-id>x</task-id>"} {
+		in, _ := json.Marshal(Input{HookEventName: "UserPromptSubmit", SessionID: "s", Prompt: p})
+		var out bytes.Buffer
+		Main(bytes.NewReader(in), &out)
+		if out.Len() != 0 {
+			t.Fatalf("routed a system message: %s", out.String())
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("Jev called %d times for system messages", calls)
+	}
+}
+
+func TestStopSkipsTurnsWithoutEditsOrWithHandOff(t *testing.T) {
+	cfg := setup(t)
+	t.Setenv("JEVCC_MODE", "on")
+	cfg.MainModel = "haiku"
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Write([]byte(`{"answers":{"complete":{"type":"noul","noul":0.1},"unverified":{"type":"noul","noul":0.9},"failing":{"type":"noul","noul":0.1},"hedging":{"type":"noul","noul":0.9},"untested_rules":{"type":"noul","noul":0.1}}}`))
+	}))
+	defer srv.Close()
+	cfg.Endpoint = srv.URL
+	dir := t.TempDir()
+	write := func(lines string) string {
+		p := filepath.Join(dir, fmt.Sprintf("t%d.jsonl", calls+len(lines)))
+		os.WriteFile(p, []byte(lines), 0o600)
+		return p
+	}
+	investigate := write(`{"type":"user","message":{"content":"why does the window flash?"}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"grep -r spawn ."}}]}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Still investigating; not sure yet."}]}}
+`)
+	if out := stop(Input{SessionID: "s", TranscriptPath: investigate}, cfg); out != nil || calls != 0 {
+		t.Fatalf("reviewed an investigation turn: %+v calls=%d", out, calls)
+	}
+	handed := write(`{"type":"user","message":{"content":"fix the bug"}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"a.go"}}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Agent","input":{"subagent_type":"jev-opus","description":"x"}}]}}
+{"type":"user","message":{"content":"<agent-message from=\"a1\">done</agent-message>"}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Done."}]}}
+`)
+	if out := stop(Input{SessionID: "s", TranscriptPath: handed}, cfg); out != nil || calls != 0 {
+		t.Fatalf("reviewed a handed-off turn: %+v", out)
+	}
+	edited := write(`{"type":"user","message":{"content":"fix the bug"}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"a.go"}}]}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Fixed."}]}}
+`)
+	for i := 0; i < 4; i++ {
+		os.WriteFile(edited, []byte(fmt.Sprintf(`{"type":"user","message":{"content":"fix bug %d"}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"a.go"}}]}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Fixed."}]}}
+`, i)), 0o600)
+		stop(Input{SessionID: "s", TranscriptPath: edited}, cfg)
+	}
+	if n := reviewEscalations("s"); n != cfg.VerifyMaxPerSession {
+		t.Fatalf("escalations %d, cap %d", n, cfg.VerifyMaxPerSession)
 	}
 }

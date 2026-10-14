@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -299,7 +300,12 @@ func Install(o Options) error {
 			return err
 		}
 	}
-	fmt.Fprintf(o.Out, "✓ jev-haiku, jev-sonnet, jev-opus subagents added to %s\n", o.agentsDir())
+	var names []string
+	for name := range Agents() {
+		names = append(names, strings.TrimSuffix(name, ".md"))
+	}
+	sort.Strings(names)
+	fmt.Fprintf(o.Out, "✓ subagents %s added to %s\n", strings.Join(names, ", "), o.agentsDir())
 	if o.DefaultModel != "" {
 		if err := setModel(o, o.DefaultModel); err != nil {
 			return err

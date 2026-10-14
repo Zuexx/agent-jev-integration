@@ -17,7 +17,7 @@ func TestCountAndLine(t *testing.T) {
 	t.Setenv("TYPESAFE_API_KEY", "k")
 	t.Setenv("JEVCC_MODE", "on")
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
-	os.WriteFile(paths.DecisionLog(), []byte(`{"session_id":"S","advice":["tier","skill"],"decision":{"tier":"opus","jev_cost_usd":0.0002}}
+	os.WriteFile(paths.DecisionLog(), []byte(`{"session_id":"S","advice":["escalate","skill"],"decision":{"tier":"opus","jev_cost_usd":0.0002}}
 {"session_id":"S","advice":["files"],"decision":{"tier":"haiku","jev_cost_usd":0.0001}}
 {"session_id":"OTHER","advice":["tier"],"decision":{"tier":"opus"}}
 `), 0o600)
@@ -56,7 +56,7 @@ func TestRenderModes(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 	cfg, _ := config.Load()
 	cfg.MainModel = "haiku"
-	s := Session{Prompts: 3, Escalated: 1, GuardChecked: 4, GuardAsked: 1, Screened: 2, CostUSD: 0.0004}
+	s := Session{Prompts: 3, Escalated: 1, EscalatedTo: map[string]int{"opus": 1}, GuardChecked: 4, GuardAsked: 1, Screened: 2, CostUSD: 0.0004}
 	full := Render(cfg, Input{SessionID: "S"}, s)
 	if len(full) != 2 || !strings.Contains(full[0], "⚙ jev on · haiku (config) · ↑✓ ↓✗ review✓ 🛡✓ inject✓") || !strings.Contains(full[1], "inject 0/2 warned") {
 		t.Fatalf("%q", full)

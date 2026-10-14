@@ -33,6 +33,8 @@ type Input struct {
 // Session counts what jevcc did in one session.
 type Session struct {
 	Prompts, Escalated, Delegated, Skill, Files, Memory, Bulk, Errors int
+	Capped                                                            int
+	EscalatedTo                                                       map[string]int
 	GuardChecked, GuardAsked                                          int
 	Reviewed, ReviewEscalated                                         int
 	Screened, Warned                                                  int
@@ -92,12 +94,18 @@ func Count(session string) Session {
 		}
 		for _, a := range r.Advice {
 			switch a {
-			case "tier":
-				if r.Decision != nil && r.Decision.Tier == "opus" || r.Decision != nil && r.Decision.Tier == "fable" {
-					s.Escalated++
-				} else {
-					s.Delegated++
+			case "escalate":
+				s.Escalated++
+				if s.EscalatedTo == nil {
+					s.EscalatedTo = map[string]int{}
 				}
+				if r.Decision != nil {
+					s.EscalatedTo[r.Decision.Tier]++
+				}
+			case "escalate_capped":
+				s.Capped++
+			case "tier":
+				s.Delegated++
 			case "skill":
 				s.Skill++
 			case "files":
@@ -182,14 +190,17 @@ func Activity(s Session) string {
 		}
 	}
 	add(s.Prompts, "%d prompts")
-	add(s.Escalated, "↑opus %d")
+	for _, t := range []string{"fable", "opus", "sonnet"} {
+		add(s.EscalatedTo[t], "↑"+t+" %d")
+	}
+	add(s.Capped, "↑capped %d")
 	add(s.Delegated, "↓cheaper %d")
 	add(s.Skill, "skill %d")
 	add(s.Files, "files %d")
 	add(s.Memory, "remember %d")
 	add(s.Bulk, "bulk %d")
 	if s.Reviewed > 0 {
-		parts = append(parts, fmt.Sprintf("review %d (↑%d)", s.Reviewed, s.ReviewEscalated))
+		parts = append(parts, fmt.Sprintf("review %d (→jev-review %d)", s.Reviewed, s.ReviewEscalated))
 	}
 	if s.GuardChecked > 0 {
 		parts = append(parts, fmt.Sprintf("🛡 %d/%d asked", s.GuardAsked, s.GuardChecked))

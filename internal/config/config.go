@@ -40,6 +40,11 @@ type Config struct {
 	// cheaper tier is delegated down and a stronger one escalated up to
 	// jev-<tier>. Empty means the top tier (only delegate down).
 	MainModel string `json:"main_model,omitempty"`
+	// EscalateMaxPerSession caps automatic escalations per session; past it
+	// the user is asked instead (cost guard, default 3).
+	EscalateMaxPerSession int `json:"escalate_max_per_session,omitempty"`
+	// EscalationsUsed is set by the hook for the current session; not stored.
+	EscalationsUsed int `json:"-"`
 	// EscalateConfidence gates upward advice; lower than MinConfidence
 	// because a wrong escalation costs money, a missed one costs quality.
 	EscalateConfidence float64 `json:"escalate_confidence,omitempty"`
@@ -71,6 +76,11 @@ type Config struct {
 	Verify          *bool   `json:"verify,omitempty"`
 	VerifyThreshold float64 `json:"verify_threshold,omitempty"`
 	VerifyAgent     string  `json:"verify_agent,omitempty"`
+	// VerifyTier is the model tier VerifyAgent runs on; the review only runs
+	// in sessions cheaper than it.
+	VerifyTier string `json:"verify_tier,omitempty"`
+	// VerifyMaxPerSession caps review escalations per session (cost guard).
+	VerifyMaxPerSession int `json:"verify_max_per_session,omitempty"`
 	// DefaultOn turns routing on for sessions that never ran /jev on|off.
 	DefaultOn bool `json:"default_on,omitempty"`
 	// MinConfidence below which the hook gives no tier advice.
@@ -149,6 +159,9 @@ func (c *Config) fill() {
 	if c.DelegateVia == "" {
 		c.DelegateVia = "agent"
 	}
+	if c.EscalateMaxPerSession == 0 {
+		c.EscalateMaxPerSession = 3
+	}
 	if c.EscalateConfidence == 0 {
 		c.EscalateConfidence = 0.5
 	}
@@ -168,7 +181,13 @@ func (c *Config) fill() {
 		c.VerifyThreshold = 0.5
 	}
 	if c.VerifyAgent == "" {
-		c.VerifyAgent = "jev-opus"
+		c.VerifyAgent = "jev-review"
+	}
+	if c.VerifyTier == "" {
+		c.VerifyTier = "opus"
+	}
+	if c.VerifyMaxPerSession == 0 {
+		c.VerifyMaxPerSession = 2
 	}
 	if c.MinConfidence == 0 {
 		c.MinConfidence = 0.75

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -64,7 +65,7 @@ func ReadTurn(path string) (Turn, bool) {
 		}
 		var s string
 		if json.Unmarshal(line.Message.Content, &s) == nil {
-			if line.Type == "user" {
+			if line.Type == "user" && !systemMessage(s) {
 				t = Turn{Request: s}
 			} else if line.Type == "assistant" {
 				t.Final = s
@@ -83,7 +84,7 @@ func ReadTurn(path string) (Turn, bool) {
 		}
 		for _, b := range blocks {
 			switch {
-			case line.Type == "user" && b.Type == "text":
+			case line.Type == "user" && b.Type == "text" && !systemMessage(b.Text):
 				t = Turn{Request: b.Text}
 			case line.Type == "user" && b.Type == "tool_result":
 				t.Outputs = append(t.Outputs, clip(resultText(b.Content), maxOut))
@@ -104,6 +105,12 @@ func ReadTurn(path string) (Turn, bool) {
 	t.Final = clip(t.Final, 4000)
 	return t, t.Request != "" && t.Final != ""
 }
+
+var systemTag = regexp.MustCompile(`^<[a-z][a-z0-9-]*[\s>]`)
+
+// systemMessage: injected text (subagent hand-backs, notifications) that
+// continues the current turn instead of starting a new one.
+func systemMessage(s string) bool { return systemTag.MatchString(strings.TrimSpace(s)) }
 
 func resultText(raw json.RawMessage) string {
 	var s string
@@ -130,20 +137,45 @@ func describe(name string, in map[string]any) string {
 	return name
 }
 
+// EditedCode reports whether the turn wrote or edited files.
+func (t Turn) EditedCode() bool {
+	for _, c := range t.Commands {
+		for _, p := range []string{"Write:", "Edit:", "MultiEdit:", "NotebookEdit:"} {
+			if strings.HasPrefix(c, p) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// HandedOff reports whether the turn already gave work to a subagent.
+func (t Turn) HandedOff() bool {
+	for _, c := range t.Commands {
+		if strings.HasPrefix(c, "Agent") || strings.HasPrefix(c, "Task") {
+			return true
+		}
+	}
+	return false
+}
+
 // Signal is one question; Bad says which side of the noul is the problem.
 type Signal struct {
 	ID       string
 	Question string
 	BadIfYes bool
 	Reason   string
+	// Recorded only: never escalates on its own (an agent honestly saying
+	// "still investigating" is not a failure).
+	InfoOnly bool
 }
 
 var Signals = []Signal{
-	{"complete", "The agent did everything `request` asks: every stated rule, edge case and error case is handled, judging by `agent_final_message`, `commands_run` and `last_tool_outputs`.", false, "not every requirement looks handled"},
-	{"unverified", "The agent wrote or edited source code in this turn (see `commands_run`), and `last_tool_outputs` shows no passing test run after its last edit.", true, "code changed without a passing test run after the last edit"},
-	{"failing", "`last_tool_outputs` shows failing tests, compile errors or panics that the final message does not resolve.", true, "unresolved failures in the tool output"},
-	{"hedging", "`agent_final_message` admits uncertainty, skipped parts, assumptions about unclear rules, or leaves TODOs.", true, "the agent hedges or skipped parts"},
-	{"untested_rules", "The agent wrote or edited source code in this turn, and `request` (or the doc comment it points to) lists specific rules or edge cases that the agent's own tests, as far as `commands_run` shows, do not clearly exercise.", true, "specified rules that its tests may not cover"},
+	{"complete", "The agent did everything `request` asks: every stated rule, edge case and error case is handled, judging by `agent_final_message`, `commands_run` and `last_tool_outputs`.", false, "not every requirement looks handled", false},
+	{"unverified", "The agent wrote or edited source code in this turn (see `commands_run`), and `last_tool_outputs` shows no passing test run after its last edit.", true, "code changed without a passing test run after the last edit", false},
+	{"failing", "`last_tool_outputs` shows failing tests, compile errors or panics that the final message does not resolve.", true, "unresolved failures in the tool output", false},
+	{"hedging", "`agent_final_message` admits uncertainty, skipped parts, assumptions about unclear rules, or leaves TODOs.", true, "the agent hedges or skipped parts", true},
+	{"untested_rules", "The agent wrote or edited source code in this turn, and `request` (or the doc comment it points to) lists specific rules or edge cases that the agent's own tests, as far as `commands_run` shows, do not clearly exercise.", true, "specified rules that its tests may not cover", false},
 }
 
 type Verdict struct {
@@ -177,6 +209,9 @@ func Check(ctx context.Context, c Asker, t Turn, threshold float64) (*Verdict, e
 		bad := p
 		if !s.BadIfYes {
 			bad = 1 - p
+		}
+		if s.InfoOnly {
+			continue
 		}
 		if bad > v.Risk {
 			v.Risk = bad

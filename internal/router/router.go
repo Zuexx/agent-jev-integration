@@ -9,6 +9,7 @@ package router
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/zuexx/agent-jev-integration/internal/config"
@@ -209,6 +210,15 @@ func verify(ctx context.Context, c Asker, state map[string]string, skills []rost
 	return nil
 }
 
+// IsSystemMessage reports whether a "prompt" is text Claude Code injected
+// (a subagent hand-back, a task notification, a reminder), not something the
+// user typed. These must not be routed or reviewed as user requests.
+func IsSystemMessage(p string) bool {
+	return systemTag.MatchString(strings.TrimSpace(p))
+}
+
+var systemTag = regexp.MustCompile(`^<[a-z][a-z0-9-]*[\s>]`)
+
 // TierOf maps a model id or alias ("claude-haiku-5-5", "sonnet") to a tier
 // name, or "" when it matches none.
 func TierOf(model string, cfg *config.Config) string {
@@ -244,12 +254,14 @@ func Context(d *Decision, cfg *config.Config) string {
 		switch {
 		case cfg.Delegate && rank[d.Tier] < rank[main] && d.TierConf >= cfg.MinConfidence:
 			lines = append(lines, fmt.Sprintf("- Model: this is %s-level work (Jev p=%.2f). The user asks you to delegate it: unless you already run on %s or cheaper, %s, give it a self-contained brief, and relay its result. This standing request counts as the user asking for a subagent. Do it yourself only if it needs conversation context that would be costly to hand over.", d.Tier, d.TierProbs[d.Tier], d.Tier, how))
+		case cfg.EscalateOn() && rank[d.Tier] > rank[main] && d.TierConf >= cfg.EscalateConfidence && cfg.EscalationsUsed >= cfg.EscalateMaxPerSession:
+			lines = append(lines, fmt.Sprintf("- Model: Jev rates this %s-level (p=%.2f), but this session already escalated %d times, the limit the user set. Do not spawn a subagent for it; tell the user in one line that it looks like %s-level work so they can switch with /model %s if they want, then do your best.", d.Tier, d.TierProbs[d.Tier], cfg.EscalationsUsed, d.Tier, d.Tier))
 		case cfg.EscalateOn() && rank[d.Tier] > rank[main] && d.TierConf >= cfg.EscalateConfidence:
 			skill := ""
 			if d.Skill != "" {
 				skill = fmt.Sprintf(" Tell it that the %s skill looks relevant so it can load it.", d.Skill)
 			}
-			lines = append(lines, fmt.Sprintf("- Model: this needs %s-level reasoning (Jev p=%.2f) and this session runs on %s. Do this FIRST, before loading skills, reading files or running commands: %s, give it the user's request word for word plus anything you already know, and relay its result.%s This standing request counts as the user asking for a subagent.", d.Tier, d.TierProbs[d.Tier], main, how, skill))
+			lines = append(lines, fmt.Sprintf("- Model: this needs %s-level reasoning (Jev p=%.2f) and this session runs on %s. Do this FIRST, before loading skills, reading files or running commands: %s (exactly one; never several in parallel), give it the user's request word for word plus anything you already know, wait for its result and relay it.%s This standing request counts as the user asking for a subagent.", d.Tier, d.TierProbs[d.Tier], main, how, skill))
 			escalated = true
 		}
 	}
