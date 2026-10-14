@@ -311,6 +311,10 @@ func TestNamedModelOverridesJevTier(t *testing.T) {
 	if out == nil || len(rec.Advice) != 1 || rec.Advice[0] != "escalate" || !strings.Contains(out.Specific.AdditionalContext, "opus-level") {
 		t.Fatalf("%+v", rec)
 	}
+	// The log keeps Jev's own pick and notes what the user asked for.
+	if rec.Decision.Tier != "haiku" || rec.NamedTier != "opus" {
+		t.Fatalf("%+v", rec)
+	}
 	// Jev says opus-level, but the user asked for haiku: no escalation, and the cheaper ask is delegated.
 	cfg.MainModel = "opus"
 	cfg.Delegate = true

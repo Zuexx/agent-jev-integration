@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/zuexx/agent-jev-integration/internal/config"
 	"github.com/zuexx/agent-jev-integration/internal/jev"
@@ -55,6 +56,8 @@ type Decision struct {
 	CostUSD   float64 `json:"jev_cost_usd"`
 	LatencyMS int64   `json:"jev_latency_ms"`
 	Model     string  `json:"jev_model,omitempty"`
+	// Named is set when Tier is one the user asked for by name, not Jev's guess.
+	Named bool `json:"-"`
 }
 
 func (d *Decision) account(r *jev.Response) {
@@ -222,8 +225,11 @@ var systemTag = regexp.MustCompile(`^<[a-z][a-z0-9-]*[\s>]`)
 // namedBefore and namedAfter match a tier the user asks for by name:
 // "用 opus", "use sonnet" or "opus 來做". Jev's own tier guess is not used then.
 var (
-	namedBefore = regexp.MustCompile(`(?i)(?:用|使用|改用|請用|交給|改成|switch to|use|using|with|run on)\s*(?:claude\s+)?(fable|opus|sonnet|haiku)\b`)
+	// English verbs need \b so "because opus" is not read as "use opus".
+	namedBefore = regexp.MustCompile(`(?i)(?:用|使用|改用|請用|交給|改成|\b(?:switch to|use|using|run on)\b)\s*(?:claude[\s-]*)?(fable|opus|sonnet|haiku)\b`)
 	namedAfter  = regexp.MustCompile(`(?i)\b(fable|opus|sonnet|haiku)\s*(?:來|去)?\s*(?:做|跑|處理|寫|(?:run|do|handle)\b)`)
+	// negWord is an English negation as a whole word ("note" is not "not").
+	negWord = regexp.MustCompile(`(?i)\b(?:not|never)\b|n't\b`)
 )
 
 // NamedTier returns the tier the prompt asks for by name, or "" when it names
@@ -236,7 +242,8 @@ func NamedTier(prompt string, cfg *config.Config) string {
 	for _, re := range []*regexp.Regexp{namedBefore, namedAfter} {
 		for _, m := range re.FindAllStringSubmatchIndex(prompt, -1) {
 			tier := strings.ToLower(prompt[m[2]:m[3]])
-			if !known[tier] || negated(prompt[:m[0]]) {
+			// "haiku 寫的 code" says who wrote it, not who should.
+			if !known[tier] || negated(prompt[:m[0]], known) || strings.HasPrefix(prompt[m[1]:], "的") {
 				continue
 			}
 			return tier
@@ -245,18 +252,24 @@ func NamedTier(prompt string, cfg *config.Config) string {
 	return ""
 }
 
-// negated reports whether the words just before a match say not to use it.
-func negated(before string) bool {
+// negated reports whether the words just before a match, in the same clause,
+// say not to use it. The clause ends at punctuation or at another tier name,
+// so "not haiku, use opus" and "別 haiku 用 opus" still ask for opus.
+func negated(before string, known map[string]bool) bool {
 	tail := strings.ToLower(before)
-	if len(tail) > 12 {
-		tail = tail[len(tail)-12:]
+	if i := strings.LastIndexAny(tail, ",，.。;；:：!！?？\n"); i >= 0 {
+		_, size := utf8.DecodeRuneInString(tail[i:])
+		tail = tail[i+size:]
 	}
-	for _, w := range []string{"不", "別", "not", "n't", "never"} {
-		if strings.Contains(tail, w) {
-			return true
+	for n := range known {
+		if i := strings.LastIndex(tail, n); i >= 0 {
+			tail = tail[i+len(n):]
 		}
 	}
-	return false
+	if r := []rune(tail); len(r) > 16 {
+		tail = string(r[len(r)-16:])
+	}
+	return strings.ContainsAny(tail, "不別") || negWord.MatchString(tail)
 }
 
 // TierOf maps a model id or alias ("claude-haiku-5-5", "sonnet") to a tier
@@ -304,17 +317,22 @@ func Build(d *Decision, cfg *config.Config) (string, []string) {
 		if cfg.DelegateVia == "model" {
 			how = fmt.Sprintf("spawn a subagent with the Agent tool, model: %q", d.Tier)
 		}
+		why := fmt.Sprintf("Jev p=%.2f", d.TierProbs[d.Tier])
+		if d.Named {
+			why = "the user asked for " + d.Tier + " by name"
+		}
 		switch {
 		case cfg.Delegate && rank[d.Tier] < rank[main] && d.TierConf >= cfg.MinConfidence:
-			add("tier", fmt.Sprintf("- Model: this is %s-level work (Jev p=%.2f). The user asks you to delegate it: unless you already run on %s or cheaper, %s, give it a self-contained brief, and relay its result. This standing request counts as the user asking for a subagent. Do it yourself only if it needs conversation context that would be costly to hand over.", d.Tier, d.TierProbs[d.Tier], d.Tier, how))
-		case cfg.EscalateOn() && rank[d.Tier] > rank[main] && d.TierConf >= cfg.EscalateConfidence && cfg.EscalationsUsed >= cfg.EscalateMaxPerSession:
+			add("tier", fmt.Sprintf("- Model: this is %s-level work (%s). The user asks you to delegate it: unless you already run on %s or cheaper, %s, give it a self-contained brief, and relay its result. This standing request counts as the user asking for a subagent. Do it yourself only if it needs conversation context that would be costly to hand over.", d.Tier, why, d.Tier, how))
+		// The per-session cap stops runaway guesses; it does not override a tier the user named.
+		case cfg.EscalateOn() && !d.Named && rank[d.Tier] > rank[main] && d.TierConf >= cfg.EscalateConfidence && cfg.EscalationsUsed >= cfg.EscalateMaxPerSession:
 			add("escalate_capped", fmt.Sprintf("- Model: Jev rates this %s-level (p=%.2f), but this session already escalated %d times, the limit the user set. Do not spawn a subagent for it; tell the user in one line that it looks like %s-level work so they can switch with /model %s if they want, then do your best.", d.Tier, d.TierProbs[d.Tier], cfg.EscalationsUsed, d.Tier, d.Tier))
 		case cfg.EscalateOn() && rank[d.Tier] > rank[main] && d.TierConf >= cfg.EscalateConfidence:
 			skill := ""
 			if d.Skill != "" {
 				skill = fmt.Sprintf(" Tell it that the %s skill looks relevant so it can load it.", d.Skill)
 			}
-			add("escalate", fmt.Sprintf("- Model: this needs %s-level reasoning (Jev p=%.2f) and this session runs on %s. Do this FIRST, before loading skills, reading files or running commands: %s (exactly one; never several in parallel), give it the user's request word for word plus anything you already know, wait for its result and relay it.%s This standing request counts as the user asking for a subagent.", d.Tier, d.TierProbs[d.Tier], main, how, skill))
+			add("escalate", fmt.Sprintf("- Model: this needs %s-level reasoning (%s) and this session runs on %s. Do this FIRST, before loading skills, reading files or running commands: %s (exactly one; never several in parallel), give it the user's request word for word plus anything you already know, wait for its result and relay it.%s This standing request counts as the user asking for a subagent.", d.Tier, why, main, how, skill))
 			escalated = true
 		}
 	}

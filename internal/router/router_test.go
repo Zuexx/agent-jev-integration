@@ -218,17 +218,41 @@ func TestBuildReportsAdviceKinds(t *testing.T) {
 func TestNamedTier(t *testing.T) {
 	c := cfg()
 	for prompt, want := range map[string]string{
-		"用 opus 幫我看這個 bug":               "opus",
-		"please use Sonnet for this":     "sonnet",
-		"haiku 來做這個改名":                   "haiku",
-		"改用 claude opus 重寫 parse()":      "opus",
-		"不要用 opus，直接改":                   "",
-		"don't use opus for this":        "",
-		"the opus model pricing is high": "",
-		"add a test for parse()":         "",
+		"用 opus 幫我看這個 bug":                "opus",
+		"please use Sonnet for this":      "sonnet",
+		"haiku 來做這個改名":                    "haiku",
+		"改用 claude opus 重寫 parse()":       "opus",
+		"不要用 opus，直接改":                    "",
+		"don't use opus for this":         "",
+		"the opus model pricing is high":  "",
+		"add a test for parse()":          "",
+		"用opus重寫":                         "opus",
+		"use claude-opus for this":        "opus",
+		"不需要特地使用 opus":                    "",
+		"I'd rather you not use opus":     "",
+		"it is slow because opus is busy": "",
+		"compare with opus pricing":       "",
+		"note: use opus for this":         "opus",
+		"not haiku, use opus":             "opus",
+		"別 haiku 用 opus":                  "opus",
+		"haiku 寫的 code 有 bug":             "",
 	} {
 		if got := NamedTier(prompt, c); got != want {
 			t.Errorf("NamedTier(%q) = %q, want %q", prompt, got, want)
 		}
+	}
+}
+
+func TestBuildNamedTierIgnoresEscalationCap(t *testing.T) {
+	c := cfg()
+	c.MainModel, c.EscalationsUsed = "haiku", c.EscalateMaxPerSession
+	d := &Decision{Tier: "opus", TierConf: 1, TierProbs: map[string]float64{"opus": 1}, Named: true}
+	text, kinds := Build(d, c)
+	if len(kinds) != 1 || kinds[0] != "escalate" || !strings.Contains(text, "the user asked for opus") {
+		t.Fatal(text, kinds)
+	}
+	d.Named = false
+	if _, kinds := Build(d, c); len(kinds) != 1 || kinds[0] != "escalate_capped" {
+		t.Fatal(kinds)
 	}
 }

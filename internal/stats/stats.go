@@ -38,9 +38,12 @@ type Record struct {
 	MainTier        string `json:"main_tier,omitempty"`
 	MainTierSource  string `json:"main_tier_source,omitempty"`
 	EscalationsUsed int    `json:"escalations_used,omitempty"`
-	ContextChars    int    `json:"context_chars"`
-	Error           string `json:"error,omitempty"`
-	HookMS          int64  `json:"hook_ms"`
+	// NamedTier is the tier the user asked for by name in the prompt; it
+	// replaced Decision.Tier (Jev's own pick) for the advice.
+	NamedTier    string `json:"named_tier,omitempty"`
+	ContextChars int    `json:"context_chars"`
+	Error        string `json:"error,omitempty"`
+	HookMS       int64  `json:"hook_ms"`
 	// Trace is written only when tracing is on (config "trace" or JEVCC_TRACE=1).
 	Trace *Trace `json:"trace,omitempty"`
 }
