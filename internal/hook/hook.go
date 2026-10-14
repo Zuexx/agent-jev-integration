@@ -210,7 +210,13 @@ func Route(ctx context.Context, in Input, d Deps) (*Output, stats.Record) {
 	cfg.EscalationsUsed = escalations(in.SessionID)
 	rec.Schema, rec.MainTier, rec.MainTierSource = stats.Schema, main, source
 	rec.EscalationsUsed = cfg.EscalationsUsed
-	text, kinds := router.Build(dec, &cfg)
+	// A tier the user names in the prompt replaces Jev's guess for the advice,
+	// so "用 opus" from a haiku session still escalates and a cheaper ask still delegates.
+	advice := *dec
+	if named := router.NamedTier(in.Prompt, d.Config); named != "" {
+		advice.Tier, advice.TierConf, advice.TierProbs = named, 1, map[string]float64{named: 1}
+	}
+	text, kinds := router.Build(&advice, &cfg)
 	rec.Advice = kinds
 	if hint := fileHint(ctx, in, d); hint != "" {
 		if text == "" {

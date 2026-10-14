@@ -301,3 +301,22 @@ func TestRouteRecordsMainTierAndTrace(t *testing.T) {
 		t.Fatalf("%+v %+v", out, rec.Trace)
 	}
 }
+
+func TestNamedModelOverridesJevTier(t *testing.T) {
+	cfg := setup(t)
+	cfg.MainModel = "haiku"
+	deps := Deps{Config: cfg, Asker: tierAsker{"haiku"}, Skills: func(string) []roster.Skill { return nil }, Now: time.Now}
+	// Jev says haiku-level, but the user asked for opus: escalate to opus.
+	out, rec := Route(context.Background(), Input{SessionID: "s", Prompt: "用 opus 重寫 scheduler"}, deps)
+	if out == nil || len(rec.Advice) != 1 || rec.Advice[0] != "escalate" || !strings.Contains(out.Specific.AdditionalContext, "opus-level") {
+		t.Fatalf("%+v", rec)
+	}
+	// Jev says opus-level, but the user asked for haiku: no escalation, and the cheaper ask is delegated.
+	cfg.MainModel = "opus"
+	cfg.Delegate = true
+	deps.Asker = tierAsker{"opus"}
+	out, rec = Route(context.Background(), Input{SessionID: "s", Prompt: "haiku 來做這個改名"}, deps)
+	if out == nil || len(rec.Advice) != 1 || rec.Advice[0] != "tier" || !strings.Contains(out.Specific.AdditionalContext, "haiku-level") {
+		t.Fatalf("%+v", rec)
+	}
+}

@@ -219,6 +219,46 @@ func IsSystemMessage(p string) bool {
 
 var systemTag = regexp.MustCompile(`^<[a-z][a-z0-9-]*[\s>]`)
 
+// namedBefore and namedAfter match a tier the user asks for by name:
+// "用 opus", "use sonnet" or "opus 來做". Jev's own tier guess is not used then.
+var (
+	namedBefore = regexp.MustCompile(`(?i)(?:用|使用|改用|請用|交給|改成|switch to|use|using|with|run on)\s*(?:claude\s+)?(fable|opus|sonnet|haiku)\b`)
+	namedAfter  = regexp.MustCompile(`(?i)\b(fable|opus|sonnet|haiku)\s*(?:來|去)?\s*(?:做|跑|處理|寫|(?:run|do|handle)\b)`)
+)
+
+// NamedTier returns the tier the prompt asks for by name, or "" when it names
+// none. A name that is negated ("不要用 opus", "don't use opus") does not count.
+func NamedTier(prompt string, cfg *config.Config) string {
+	known := map[string]bool{}
+	for _, n := range cfg.TierNames() {
+		known[n] = true
+	}
+	for _, re := range []*regexp.Regexp{namedBefore, namedAfter} {
+		for _, m := range re.FindAllStringSubmatchIndex(prompt, -1) {
+			tier := strings.ToLower(prompt[m[2]:m[3]])
+			if !known[tier] || negated(prompt[:m[0]]) {
+				continue
+			}
+			return tier
+		}
+	}
+	return ""
+}
+
+// negated reports whether the words just before a match say not to use it.
+func negated(before string) bool {
+	tail := strings.ToLower(before)
+	if len(tail) > 12 {
+		tail = tail[len(tail)-12:]
+	}
+	for _, w := range []string{"不", "別", "not", "n't", "never"} {
+		if strings.Contains(tail, w) {
+			return true
+		}
+	}
+	return false
+}
+
 // TierOf maps a model id or alias ("claude-haiku-5-5", "sonnet") to a tier
 // name, or "" when it matches none.
 func TierOf(model string, cfg *config.Config) string {

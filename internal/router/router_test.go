@@ -214,3 +214,21 @@ func TestBuildReportsAdviceKinds(t *testing.T) {
 		t.Fatal(text, kinds)
 	}
 }
+
+func TestNamedTier(t *testing.T) {
+	c := cfg()
+	for prompt, want := range map[string]string{
+		"用 opus 幫我看這個 bug":               "opus",
+		"please use Sonnet for this":     "sonnet",
+		"haiku 來做這個改名":                   "haiku",
+		"改用 claude opus 重寫 parse()":      "opus",
+		"不要用 opus，直接改":                   "",
+		"don't use opus for this":        "",
+		"the opus model pricing is high": "",
+		"add a test for parse()":         "",
+	} {
+		if got := NamedTier(prompt, c); got != want {
+			t.Errorf("NamedTier(%q) = %q, want %q", prompt, got, want)
+		}
+	}
+}
