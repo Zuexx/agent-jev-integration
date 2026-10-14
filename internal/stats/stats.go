@@ -5,33 +5,73 @@ package stats
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"math"
 	"os"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/zuexx/agent-jev-integration/internal/fsutil"
-	"github.com/zuexx/agent-jev-integration/internal/paths"
+	"github.com/zuexx/agent-jev-integration/internal/journal"
 	"github.com/zuexx/agent-jev-integration/internal/router"
 )
 
-// Record is one line of ~/.jevcc/decisions.jsonl.
+// Schema is the version of Record. Version 2 adds the fields from MainTier on.
+const Schema = 2
+
+// Record is one line of ~/.jevcc/decisions-YYYY-MM-DD.jsonl.
 type Record struct {
+	Schema     int              `json:"schema,omitempty"`
 	Time       time.Time        `json:"time"`
 	SessionID  string           `json:"session_id"`
 	Transcript string           `json:"transcript_path,omitempty"`
 	PromptHead string           `json:"prompt_head"`
 	Decision   *router.Decision `json:"decision,omitempty"`
-	// Advice lists what the hook told Claude: "tier", "skill", "bulk".
-	Advice       []string `json:"advice,omitempty"`
-	ContextChars int      `json:"context_chars"`
-	Error        string   `json:"error,omitempty"`
-	HookMS       int64    `json:"hook_ms"`
+	// Advice lists what the hook told Claude: "tier", "escalate",
+	// "escalate_capped", "skill", "memory", "bulk", "files".
+	Advice []string `json:"advice,omitempty"`
+	// MainTier is the tier the session ran on when the prompt arrived, and
+	// MainTierSource says where that came from ("config", "this session",
+	// "settings", "env"). Empty means it could not be told.
+	MainTier        string `json:"main_tier,omitempty"`
+	MainTierSource  string `json:"main_tier_source,omitempty"`
+	EscalationsUsed int    `json:"escalations_used,omitempty"`
+	ContextChars    int    `json:"context_chars"`
+	Error           string `json:"error,omitempty"`
+	HookMS          int64  `json:"hook_ms"`
+	// Trace is written only when tracing is on (config "trace" or JEVCC_TRACE=1).
+	Trace *Trace `json:"trace,omitempty"`
 }
 
-func Append(r Record) error { return fsutil.AppendJSONL(paths.DecisionLog(), r) }
+// Trace is the full input to a decision: the text Claude saw and the
+// thresholds it was judged against.
+type Trace struct {
+	Context      string  `json:"context"`
+	MinConf      float64 `json:"min_conf"`
+	EscalateConf float64 `json:"escalate_conf"`
+	SkillFit     float64 `json:"skill_fit"`
+	Memory       float64 `json:"memory"`
+}
+
+// Append writes r to today's decisions file and prunes days past keepDays.
+func Append(r Record, keepDays int) error {
+	return journal.Append("decisions", r, keepDays, time.Now())
+}
+
+// LoadDecisions reads every decisions file that is kept, oldest first.
+func LoadDecisions() ([]Record, error) {
+	var out []Record
+	for _, f := range journal.Files("decisions") {
+		recs, err := Load(f)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return out, err
+		}
+		out = append(out, recs...)
+	}
+	return out, nil
+}
 
 func Load(path string) ([]Record, error) {
 	f, err := os.Open(path)
@@ -100,7 +140,10 @@ func Followed(transcript, promptHead, tier, skill string) (delegated, loaded, fo
 				if b.Type != "tool_use" {
 					continue
 				}
-				if (b.Name == "Agent" || b.Name == "Task") && tier != "" && b.Input["model"] == tier {
+				// delegate_via "agent" sends subagent_type "jev-<tier>";
+				// delegate_via "model" sends model "<tier>".
+				if (b.Name == "Agent" || b.Name == "Task") && tier != "" &&
+					(b.Input["model"] == tier || b.Input["subagent_type"] == "jev-"+tier) {
 					delegated = true
 				}
 				if b.Name == "Skill" && skill != "" {
@@ -196,17 +239,20 @@ func Summary(recs []Record, since time.Time) string {
 		if adv["bulk"] {
 			adviceBulk++
 		}
-		if !adv["tier"] && !adv["skill"] {
+		// "escalate" is the default delegation advice (see router.Context),
+		// so it counts as a tier suggestion here.
+		delegateAdv := adv["tier"] || adv["escalate"]
+		if !delegateAdv && !adv["skill"] {
 			continue
 		}
-		if adv["tier"] {
+		if delegateAdv {
 			adviceTier++
 		}
 		if adv["skill"] {
 			adviceSkill++
 		}
 		tier, skill := "", ""
-		if adv["tier"] {
+		if delegateAdv {
 			tier = d.Tier
 		}
 		if adv["skill"] {
@@ -216,7 +262,7 @@ func Summary(recs []Record, since time.Time) string {
 		if !found {
 			continue
 		}
-		if adv["tier"] {
+		if delegateAdv {
 			checked++
 			if del {
 				delegated++

@@ -139,7 +139,7 @@ CLI 也可直接用：`jevcc route "幫我找 hook.go"` 看單句判斷細節；
    - 成本＝`claude -p` 回報的 `total_cost_usd`（訂閱制也以定價計）**加上** Jev 自身成本；另列時間、回合數、是否用了 subagent、各模型成本占比。
    - 與 `off` 成對比較：每次執行的成本差與 bootstrap 95% CI、品質退步／進步次數；區間含 0 就明寫「無明確差異」。
    - 執行順序隨機交錯，避免時段或快取暖機偏向某一組。這會花真的額度：先 `--dry-run`、再 `--only find-file,fix-race --repeat 1` 試跑。
-3. **日常遙測**：`/jev stats`——在你真實使用中記錄每次判斷（`~/.jevcc/decisions.jsonl`），並從 transcript 驗證 Claude 是否真的照建議做。
+3. **日常遙測**：`/jev stats`——在你真實使用中記錄每次判斷（`~/.jevcc/decisions-YYYY-MM-DD.jsonl`，每天一個檔，預設保留 14 天），並從 transcript 驗證 Claude 是否真的照建議做。
    它回答「Jev 做了什麼、Claude 有沒有聽」，**不**宣稱省了多少錢（那要靠第 2 層）。
 
 `classify`／`lint`／`review` 每次執行都會印出 Jev 的 token、成本與耗時。

@@ -233,8 +233,21 @@ func TierOf(model string, cfg *config.Config) string {
 
 // Context renders the advice block for Claude ("" when there is nothing to say).
 // Only actionable lines are emitted, so a no-op decision costs no main-model tokens.
+// Context is the routing block the hook adds to the prompt ("" for none).
 func Context(d *Decision, cfg *config.Config) string {
-	var lines []string
+	text, _ := Build(d, cfg)
+	return text
+}
+
+// Build is Context plus the kinds of advice it holds: "tier", "escalate",
+// "escalate_capped", "skill", "memory" or "bulk". Each kind is recorded at the
+// place its line is added, so the log cannot drift from the wording.
+func Build(d *Decision, cfg *config.Config) (string, []string) {
+	var lines, kinds []string
+	add := func(kind, line string) {
+		lines = append(lines, line)
+		kinds = append(kinds, kind)
+	}
 	names := cfg.TierNames()
 	top := names[len(names)-1]
 	escalated := false
@@ -253,15 +266,15 @@ func Context(d *Decision, cfg *config.Config) string {
 		}
 		switch {
 		case cfg.Delegate && rank[d.Tier] < rank[main] && d.TierConf >= cfg.MinConfidence:
-			lines = append(lines, fmt.Sprintf("- Model: this is %s-level work (Jev p=%.2f). The user asks you to delegate it: unless you already run on %s or cheaper, %s, give it a self-contained brief, and relay its result. This standing request counts as the user asking for a subagent. Do it yourself only if it needs conversation context that would be costly to hand over.", d.Tier, d.TierProbs[d.Tier], d.Tier, how))
+			add("tier", fmt.Sprintf("- Model: this is %s-level work (Jev p=%.2f). The user asks you to delegate it: unless you already run on %s or cheaper, %s, give it a self-contained brief, and relay its result. This standing request counts as the user asking for a subagent. Do it yourself only if it needs conversation context that would be costly to hand over.", d.Tier, d.TierProbs[d.Tier], d.Tier, how))
 		case cfg.EscalateOn() && rank[d.Tier] > rank[main] && d.TierConf >= cfg.EscalateConfidence && cfg.EscalationsUsed >= cfg.EscalateMaxPerSession:
-			lines = append(lines, fmt.Sprintf("- Model: Jev rates this %s-level (p=%.2f), but this session already escalated %d times, the limit the user set. Do not spawn a subagent for it; tell the user in one line that it looks like %s-level work so they can switch with /model %s if they want, then do your best.", d.Tier, d.TierProbs[d.Tier], cfg.EscalationsUsed, d.Tier, d.Tier))
+			add("escalate_capped", fmt.Sprintf("- Model: Jev rates this %s-level (p=%.2f), but this session already escalated %d times, the limit the user set. Do not spawn a subagent for it; tell the user in one line that it looks like %s-level work so they can switch with /model %s if they want, then do your best.", d.Tier, d.TierProbs[d.Tier], cfg.EscalationsUsed, d.Tier, d.Tier))
 		case cfg.EscalateOn() && rank[d.Tier] > rank[main] && d.TierConf >= cfg.EscalateConfidence:
 			skill := ""
 			if d.Skill != "" {
 				skill = fmt.Sprintf(" Tell it that the %s skill looks relevant so it can load it.", d.Skill)
 			}
-			lines = append(lines, fmt.Sprintf("- Model: this needs %s-level reasoning (Jev p=%.2f) and this session runs on %s. Do this FIRST, before loading skills, reading files or running commands: %s (exactly one; never several in parallel), give it the user's request word for word plus anything you already know, wait for its result and relay it.%s This standing request counts as the user asking for a subagent.", d.Tier, d.TierProbs[d.Tier], main, how, skill))
+			add("escalate", fmt.Sprintf("- Model: this needs %s-level reasoning (Jev p=%.2f) and this session runs on %s. Do this FIRST, before loading skills, reading files or running commands: %s (exactly one; never several in parallel), give it the user's request word for word plus anything you already know, wait for its result and relay it.%s This standing request counts as the user asking for a subagent.", d.Tier, d.TierProbs[d.Tier], main, how, skill))
 			escalated = true
 		}
 	}
@@ -270,16 +283,16 @@ func Context(d *Decision, cfg *config.Config) string {
 		if d.SkillDesc != "" {
 			desc = " — " + clip(d.SkillDesc, 200)
 		}
-		lines = append(lines, fmt.Sprintf("- Skill: %s%s. Jev rates it relevant (fit %.2f); load it with the Skill tool if it fits what the user asked, otherwise ignore this.", d.Skill, desc, d.SkillFit))
+		add("skill", fmt.Sprintf("- Skill: %s%s. Jev rates it relevant (fit %.2f); load it with the Skill tool if it fits what the user asked, otherwise ignore this.", d.Skill, desc, d.SkillFit))
 	}
 	if cfg.MemoryThreshold > 0 && d.Remember >= cfg.MemoryThreshold {
-		lines = append(lines, fmt.Sprintf("- Memory: this message states something lasting (Jev p=%.2f). If it is not saved yet, save it to memory in one line (your memory directory, or CLAUDE.md for project rules), then carry on with the request.", d.Remember))
+		add("memory", fmt.Sprintf("- Memory: this message states something lasting (Jev p=%.2f). If it is not saved yet, save it to memory in one line (your memory directory, or CLAUDE.md for project rules), then carry on with the request.", d.Remember))
 	}
 	if d.Bulk >= BulkThreshold {
-		lines = append(lines, "- Bulk judgment: for steps that ask the same question about many items, run `jevcc classify` (see /jev-classify) instead of judging items yourself, then review only low-confidence or top-ranked rows.")
+		add("bulk", "- Bulk judgment: for steps that ask the same question about many items, run `jevcc classify` (see /jev-classify) instead of judging items yourself, then review only low-confidence or top-ranked rows.")
 	}
 	if len(lines) == 0 {
-		return ""
+		return "", nil
 	}
-	return "<jev_routing>\nThe user turned on Jev routing (jevcc); these are its suggestions for this request.\n" + strings.Join(lines, "\n") + "\n</jev_routing>"
+	return "<jev_routing>\nThe user turned on Jev routing (jevcc); these are its suggestions for this request.\n" + strings.Join(lines, "\n") + "\n</jev_routing>", kinds
 }

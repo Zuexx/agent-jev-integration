@@ -50,7 +50,7 @@ Low confidence â†’ no advice (confidence-gated routing). Any error or timeout â†
    Cost is `total_cost_usd` from `claude -p --output-format json` **plus** Jev's own cost. Reports per-arm pass rate,
    cost, tokens, wall time, subagents, and paired cost differences with bootstrap 95% CI. If an arm is worse, the report
    says so.
-3. **Live telemetry** (`/jev stats`): every routing decision is appended to `~/.jevcc/decisions.jsonl`; stats reports
+3. **Live telemetry** (`/jev stats`): every routing decision is appended to `~/.jevcc/decisions-YYYY-MM-DD.jsonl` (one file per day, 14 days kept); stats reports
    tier mix, Jev latency/cost, timeouts, and how often Claude actually followed the delegation/skill advice (read from
    the session transcript).
 

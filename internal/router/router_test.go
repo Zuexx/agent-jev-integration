@@ -186,3 +186,31 @@ func TestEscalationCap(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestBuildReportsAdviceKinds(t *testing.T) {
+	t.Setenv("JEVCC_HOME", t.TempDir())
+	c, _ := config.Load()
+	c.MainModel = "haiku"
+	hard := &Decision{Tier: "opus", TierConf: 0.9, TierProbs: map[string]float64{"opus": 0.9}, Skill: "tdd", SkillFit: 0.9}
+	text, kinds := Build(hard, c)
+	if text != Context(hard, c) {
+		t.Fatal("Build and Context disagree")
+	}
+	if len(kinds) != 1 || kinds[0] != "escalate" {
+		t.Fatal(kinds)
+	}
+	c.EscalationsUsed = c.EscalateMaxPerSession
+	// Past the cap the skill line is not suppressed, so both kinds appear.
+	if _, kinds := Build(hard, c); len(kinds) != 2 || kinds[0] != "escalate_capped" || kinds[1] != "skill" {
+		t.Fatal(kinds)
+	}
+	c.EscalationsUsed = 0
+	c.MainModel = "opus"
+	easy := &Decision{Tier: "haiku", TierConf: 0.99, TierProbs: map[string]float64{"haiku": 0.99}, Skill: "pdf", SkillFit: 0.9}
+	if text, kinds := Build(easy, c); !strings.Contains(text, "- Skill: pdf") || len(kinds) != 1 || kinds[0] != "skill" {
+		t.Fatal(text, kinds)
+	}
+	if text, kinds := Build(&Decision{}, c); text != "" || kinds != nil {
+		t.Fatal(text, kinds)
+	}
+}

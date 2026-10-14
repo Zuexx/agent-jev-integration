@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zuexx/agent-jev-integration/internal/audit"
 	"github.com/zuexx/agent-jev-integration/internal/bench"
 	"github.com/zuexx/agent-jev-integration/internal/cite"
 	"github.com/zuexx/agent-jev-integration/internal/classify"
@@ -52,6 +53,7 @@ const usage = `usage: jevcc <command>
   ask <prompt> [-- claude args]    pick the model with Jev, then start claude on it
   roster [--json]                  list the skills Jev chooses from here
   stats                            routing decisions so far (same as /jev stats)
+  audit-log [-days N] [-limit N]   routing decisions that look wrong, for a person to check
   warm [--n N --gap D]             tiny Jev call(s); with --n, a latency probe over time
 
   skills hide|show [--scope S] [--dir D] [--mode name-only]   shrink the skill listing; Jev names the skill
@@ -85,6 +87,7 @@ func realMain(args []string) int {
 		"ask":          cmdAsk,
 		"roster":       cmdRoster,
 		"stats":        cmdStats,
+		"audit-log":    cmdAuditLog,
 		"classify":     cmdClassify,
 		"lint":         cmdLint,
 		"review":       cmdReview,
@@ -321,11 +324,32 @@ func oneLine(s string, n int) string {
 }
 
 func cmdStats([]string) int {
-	recs, err := stats.Load(paths.DecisionLog())
+	recs, err := stats.LoadDecisions()
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fail(err)
 	}
 	fmt.Println(stats.Summary(recs, time.Time{}))
+	return 0
+}
+
+func cmdAuditLog(args []string) int {
+	fset := flag.NewFlagSet("audit-log", flag.ContinueOnError)
+	days := fset.Int("days", 7, "look back this many days")
+	limit := fset.Int("limit", 5, "examples to show per kind")
+	if err := fset.Parse(args); err != nil {
+		return 2
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return fail(err)
+	}
+	recs, err := stats.LoadDecisions()
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fail(err)
+	}
+	now := time.Now()
+	since := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -*days)
+	fmt.Print(audit.Report(audit.Find(recs, cfg, since), since, *limit))
 	return 0
 }
 
@@ -636,7 +660,7 @@ func cmdBench(args []string) int {
 			return d.Tier, d.CostUSD, nil
 		},
 		JevCost: func(session string) float64 {
-			recs, _ := stats.Load(paths.DecisionLog())
+			recs, _ := stats.LoadDecisions()
 			sum := 0.0
 			for _, rec := range recs {
 				if rec.SessionID == session && rec.Decision != nil {
@@ -849,7 +873,7 @@ func cmdEscalateEval(args []string) int {
 	}
 	fmt.Fprintf(os.Stderr, "jevcc: %d prompts on haiku with escalation advice…\n", len(items))
 	adviceFor := func(session string) (string, []string) {
-		recs, _ := stats.Load(paths.DecisionLog())
+		recs, _ := stats.LoadDecisions()
 		for _, rec := range recs {
 			if rec.SessionID == session && rec.Decision != nil {
 				return rec.Decision.Tier, rec.Advice

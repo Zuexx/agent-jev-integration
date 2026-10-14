@@ -16,6 +16,7 @@ import (
 
 	"github.com/zuexx/agent-jev-integration/internal/config"
 	"github.com/zuexx/agent-jev-integration/internal/jev"
+	"github.com/zuexx/agent-jev-integration/internal/journal"
 	"github.com/zuexx/agent-jev-integration/internal/paths"
 	"github.com/zuexx/agent-jev-integration/internal/roster"
 	"github.com/zuexx/agent-jev-integration/internal/stats"
@@ -96,7 +97,7 @@ func TestMainEndToEnd(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &o); err != nil || o.Specific == nil || !strings.Contains(o.Specific.AdditionalContext, `"jev-haiku"`) {
 		t.Fatalf("%s %v", out.String(), err)
 	}
-	recs, err := stats.Load(paths.DecisionLog())
+	recs, err := stats.LoadDecisions()
 	if err != nil || len(recs) != 1 || recs[0].Decision.Tier != "haiku" || recs[0].Advice[0] != "tier" {
 		t.Fatalf("%+v %v", recs, err)
 	}
@@ -240,5 +241,63 @@ func TestStopSkipsTurnsWithoutEditsOrWithHandOff(t *testing.T) {
 	}
 	if n := reviewEscalations("s"); n != cfg.VerifyMaxPerSession {
 		t.Fatalf("escalations %d, cap %d", n, cfg.VerifyMaxPerSession)
+	}
+}
+
+func TestStopSkipReasonsAreTraced(t *testing.T) {
+	cfg := setup(t)
+	t.Setenv("JEVCC_MODE", "on")
+	cfg.MainModel = "haiku"
+	cfg.Endpoint = "http://127.0.0.1:1" // never reached: nothing here needs a review
+	investigate := filepath.Join(t.TempDir(), "t.jsonl")
+	os.WriteFile(investigate, []byte(`{"type":"user","message":{"content":"why does the window flash?"}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Not sure yet."}]}}
+`), 0o600)
+	logPath := journal.Path("verify", time.Now())
+
+	stop(Input{SessionID: "s", TranscriptPath: investigate}, cfg)
+	if _, err := os.Stat(logPath); err == nil {
+		t.Fatal("skip reasons were written without trace")
+	}
+
+	trace := true
+	cfg.Trace = &trace
+	stop(Input{SessionID: "s", TranscriptPath: investigate}, cfg)
+	stop(Input{SessionID: "s", TranscriptPath: investigate}, cfg) // second scope, same event
+	b, err := os.ReadFile(logPath)
+	if err != nil || !strings.Contains(string(b), `"skipped":"not_code"`) || !strings.Contains(string(b), `"request_head":"why does the window flash?"`) {
+		t.Fatal(err, string(b))
+	}
+	if n := strings.Count(string(b), `"skipped"`); n != 1 {
+		t.Fatalf("logged the same event %d times:\n%s", n, b)
+	}
+}
+
+type tierAsker struct{ tier string }
+
+func (a tierAsker) Ask(context.Context, any, map[string]jev.Question) (*jev.Response, error) {
+	return &jev.Response{Answers: map[string]jev.Answer{
+		"tier": {Type: "choice", Choice: a.tier, Confidence: 0.9, Probabilities: map[string]float64{a.tier: 0.9}},
+	}}, nil
+}
+
+func TestRouteRecordsMainTierAndTrace(t *testing.T) {
+	cfg := setup(t)
+	cfg.MainModel = "haiku"
+	deps := Deps{Config: cfg, Asker: tierAsker{"opus"}, Skills: func(string) []roster.Skill { return nil }, Now: time.Now}
+	out, rec := Route(context.Background(), Input{SessionID: "s", Prompt: "redesign the scheduler"}, deps)
+	if out == nil || rec.Schema != stats.Schema || rec.MainTier != "haiku" || rec.MainTierSource != "config" ||
+		rec.EscalationsUsed != 0 || len(rec.Advice) != 1 || rec.Advice[0] != "escalate" || rec.Trace != nil {
+		t.Fatalf("%+v", rec)
+	}
+
+	trace := true
+	cfg.Trace = &trace
+	deps.Asker = tierAsker{"haiku"} // same tier as the session: no advice, thresholds still traced
+	out, rec = Route(context.Background(), Input{SessionID: "s", Prompt: "rename x"}, deps)
+	if out != nil || len(rec.Advice) != 0 || rec.Trace == nil || rec.Trace.Context != "" ||
+		rec.Trace.MinConf != cfg.MinConfidence || rec.Trace.EscalateConf != cfg.EscalateConfidence ||
+		rec.Trace.SkillFit != cfg.SkillFit || rec.Trace.Memory != cfg.MemoryThreshold || rec.Trace.MinConf == 0 {
+		t.Fatalf("%+v %+v", out, rec.Trace)
 	}
 }

@@ -6,9 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zuexx/agent-jev-integration/internal/config"
-	"github.com/zuexx/agent-jev-integration/internal/paths"
+	"github.com/zuexx/agent-jev-integration/internal/journal"
 )
 
 func TestCountAndLine(t *testing.T) {
@@ -17,15 +18,18 @@ func TestCountAndLine(t *testing.T) {
 	t.Setenv("TYPESAFE_API_KEY", "k")
 	t.Setenv("JEVCC_MODE", "on")
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
-	os.WriteFile(paths.DecisionLog(), []byte(`{"session_id":"S","advice":["escalate","skill"],"decision":{"tier":"opus","jev_cost_usd":0.0002}}
+	os.WriteFile(journal.Path("decisions", time.Now()), []byte(`{"session_id":"S","advice":["escalate","skill"],"decision":{"tier":"opus","jev_cost_usd":0.0002}}
 {"session_id":"S","advice":["files"],"decision":{"tier":"haiku","jev_cost_usd":0.0001}}
 {"session_id":"OTHER","advice":["tier"],"decision":{"tier":"opus"}}
 `), 0o600)
 	os.WriteFile(filepath.Join(home, "guard.jsonl"), []byte(`{"session_id":"S","asked":true,"verdict":{"jev_cost_usd":0.00002}}
 {"session_id":"S","verdict":{"jev_cost_usd":0.00002}}
 `), 0o600)
+	os.WriteFile(filepath.Join(home, "verify.jsonl"), []byte(`{"session_id":"S","verdict":{"risk":0.1}}
+{"session_id":"S","skipped":"not_code"}
+`), 0o600)
 	s := Count("S")
-	if s.Prompts != 2 || s.Escalated != 1 || s.Skill != 1 || s.Files != 1 || s.GuardAsked != 1 || s.GuardChecked != 2 {
+	if s.Prompts != 2 || s.Escalated != 1 || s.Skill != 1 || s.Files != 1 || s.GuardAsked != 1 || s.GuardChecked != 2 || s.Reviewed != 1 {
 		t.Fatalf("%+v", s)
 	}
 	cfg, _ := config.Load()
