@@ -25,6 +25,7 @@ import (
 	"github.com/zuexx/agent-jev-integration/internal/guard"
 	"github.com/zuexx/agent-jev-integration/internal/inject"
 	"github.com/zuexx/agent-jev-integration/internal/jev"
+	"github.com/zuexx/agent-jev-integration/internal/journal"
 	"github.com/zuexx/agent-jev-integration/internal/logx"
 	"github.com/zuexx/agent-jev-integration/internal/paths"
 	"github.com/zuexx/agent-jev-integration/internal/roster"
@@ -174,7 +175,7 @@ func Command(in Input, cfg *config.Config) (out *Output, ok bool) {
 		}
 		return block("usage: /jev statusline full|compact|off (now: %s)", cfg.Statusline), true
 	case "stats":
-		recs, err := stats.Load(paths.DecisionLog())
+		recs, err := stats.LoadDecisions()
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return block("jevcc: %v", err), true
 		}
@@ -204,9 +205,13 @@ func Route(ctx context.Context, in Input, d Deps) (*Output, stats.Record) {
 	}
 	rec.Decision = dec
 	cfg := *d.Config
-	cfg.MainModel = SessionTier(in, d.Config)
+	main, source := SessionTierSource(in, d.Config)
+	cfg.MainModel = main
 	cfg.EscalationsUsed = escalations(in.SessionID)
-	text := router.Context(dec, &cfg)
+	rec.Schema, rec.MainTier, rec.MainTierSource = stats.Schema, main, source
+	rec.EscalationsUsed = cfg.EscalationsUsed
+	text, kinds := router.Build(dec, &cfg)
+	rec.Advice = kinds
 	if hint := fileHint(ctx, in, d); hint != "" {
 		if text == "" {
 			text = "<jev_routing>\nThe user turned on Jev routing (jevcc); these are its suggestions for this request.\n</jev_routing>"
@@ -215,25 +220,14 @@ func Route(ctx context.Context, in Input, d Deps) (*Output, stats.Record) {
 		rec.Advice = append(rec.Advice, "files")
 	}
 	rec.ContextChars = len(text)
+	// The thresholds are logged even when no advice was given, so a silent
+	// prompt can be checked against them.
+	if cfg.TraceOn() {
+		rec.Trace = &stats.Trace{Context: text, MinConf: cfg.MinConfidence, EscalateConf: cfg.EscalateConfidence,
+			SkillFit: cfg.SkillFit, Memory: cfg.MemoryThreshold}
+	}
 	if text == "" {
 		return nil, rec
-	}
-	switch {
-	case strings.Contains(text, "- Model:") && strings.Contains(text, "Do this FIRST"):
-		rec.Advice = append(rec.Advice, "escalate")
-	case strings.Contains(text, "- Model:") && strings.Contains(text, "already escalated"):
-		rec.Advice = append(rec.Advice, "escalate_capped")
-	case strings.Contains(text, "- Model:"):
-		rec.Advice = append(rec.Advice, "tier")
-	}
-	if strings.Contains(text, "- Skill:") {
-		rec.Advice = append(rec.Advice, "skill")
-	}
-	if strings.Contains(text, "- Memory:") {
-		rec.Advice = append(rec.Advice, "memory")
-	}
-	if strings.Contains(text, "- Bulk judgment:") {
-		rec.Advice = append(rec.Advice, "bulk")
 	}
 	return &Output{Specific: &Specific{HookEventName: "UserPromptSubmit", AdditionalContext: text}}, rec
 }
@@ -402,7 +396,7 @@ func postTool(in Input, cfg *config.Config) *Output {
 	v, err := inject.Check(ctx, client, source, text)
 	rec := map[string]any{"time": time.Now(), "session_id": in.SessionID, "tool": in.ToolName, "source": head(source)}
 	defer func() {
-		if err := fsutil.AppendJSONL(filepath.Join(paths.StateDir(), "injection.jsonl"), rec); err != nil {
+		if err := journal.Append("injection", rec, cfg.KeepDays(), time.Now()); err != nil {
 			logx.Printf("hook: log injection: %v", err)
 		}
 	}()
@@ -432,7 +426,7 @@ func preTool(in Input, cfg *config.Config) *Output {
 	v, err := guard.Check(ctx, client, a, cfg.GuardThreshold)
 	rec := map[string]any{"time": time.Now(), "session_id": in.SessionID, "tool": in.ToolName, "command": head(a.Command), "file": a.File}
 	defer func() {
-		if err := fsutil.AppendJSONL(filepath.Join(paths.StateDir(), "guard.jsonl"), rec); err != nil {
+		if err := journal.Append("guard", rec, cfg.KeepDays(), time.Now()); err != nil {
 			logx.Printf("hook: log guard: %v", err)
 		}
 	}()
@@ -448,6 +442,29 @@ func preTool(in Input, cfg *config.Config) *Output {
 	return &Output{Specific: &Specific{HookEventName: "PreToolUse", PermissionDecision: "ask", PermissionDecisionReason: guard.Reason(v)}}
 }
 
+// skipVerify records why a finished turn was not reviewed, so a review that
+// should have happened can be told apart from one that never applied. Written
+// only with tracing on: a line per turn is too much for the default logs.
+func skipVerify(in Input, cfg *config.Config, reason string) {
+	if !cfg.TraceOn() {
+		return
+	}
+	// Each installed scope runs this hook for the same Stop event. The
+	// transcript grows every turn, so its size identifies the event.
+	size := int64(0)
+	if fi, err := os.Stat(in.TranscriptPath); err == nil {
+		size = fi.Size()
+	}
+	if !First(Input{SessionID: in.SessionID, Prompt: fmt.Sprintf("skip\x00%s\x00%d", reason, size)}) {
+		return
+	}
+	turn, _ := verify.ReadTurn(in.TranscriptPath)
+	rec := map[string]any{"time": time.Now(), "session_id": in.SessionID, "skipped": reason, "request_head": head(turn.Request)}
+	if err := journal.Append("verify", rec, cfg.KeepDays(), time.Now()); err != nil {
+		logx.Printf("hook: log verify skip: %v", err)
+	}
+}
+
 // stop is the Stop-event check: with verify on, Jev reviews the finished turn
 // and, if it looks risky, asks Claude to escalate once before stopping.
 func stop(in Input, cfg *config.Config) *Output {
@@ -456,6 +473,7 @@ func stop(in Input, cfg *config.Config) *Output {
 	}
 	// Reviewing only pays when the session is cheaper than the reviewer.
 	if main := SessionTier(in, cfg); main == "" || tierRank(main, cfg) >= tierRank(cfg.VerifyTier, cfg) {
+		skipVerify(in, cfg, "main_not_cheaper")
 		return nil
 	}
 	turn, _ := verify.ReadTurn(in.TranscriptPath)
@@ -464,15 +482,26 @@ func stop(in Input, cfg *config.Config) *Output {
 	}
 	if turn.Request == "" || turn.Final == "" {
 		logx.Printf("hook: verify: no transcript turn for %s", in.SessionID)
+		skipVerify(in, cfg, "no_turn")
 		return nil
 	}
 	if strings.HasPrefix(strings.TrimSpace(turn.Request), "/") || router.IsSystemMessage(turn.Request) {
+		skipVerify(in, cfg, "slash")
 		return nil
 	}
 	// Only finished coding work is reviewed: not investigation or answers,
 	// not turns that already handed the work to a subagent, and at most
 	// VerifyMaxPerSession escalations per session.
-	if !turn.EditedCode() || turn.HandedOff() || reviewEscalations(in.SessionID) >= cfg.VerifyMaxPerSession {
+	if !turn.EditedCode() {
+		skipVerify(in, cfg, "not_code")
+		return nil
+	}
+	if turn.HandedOff() {
+		skipVerify(in, cfg, "handed_off")
+		return nil
+	}
+	if reviewEscalations(in.SessionID) >= cfg.VerifyMaxPerSession {
+		skipVerify(in, cfg, "cap")
 		return nil
 	}
 	if !First(Input{SessionID: in.SessionID, Prompt: "stop\x00" + turn.Request + turn.Final}) {
@@ -485,7 +514,7 @@ func stop(in Input, cfg *config.Config) *Output {
 	v, err := verify.Check(ctx, client, turn, cfg.VerifyThreshold)
 	rec := map[string]any{"time": time.Now(), "session_id": in.SessionID, "request_head": head(turn.Request)}
 	defer func() {
-		if err := fsutil.AppendJSONL(filepath.Join(paths.StateDir(), "verify.jsonl"), rec); err != nil {
+		if err := journal.Append("verify", rec, cfg.KeepDays(), time.Now()); err != nil {
 			logx.Printf("hook: log verify: %v", err)
 		}
 	}()
@@ -504,7 +533,7 @@ func stop(in Input, cfg *config.Config) *Output {
 
 // escalations counts the routing escalations already advised in a session.
 func escalations(session string) int {
-	recs, _ := stats.Load(paths.DecisionLog())
+	recs, _ := stats.LoadDecisions()
 	n := 0
 	for _, r := range recs {
 		if r.SessionID != session {
@@ -520,15 +549,17 @@ func escalations(session string) int {
 }
 
 func reviewEscalations(session string) int {
-	b, err := os.ReadFile(filepath.Join(paths.StateDir(), "verify.jsonl"))
-	if err != nil {
-		return 0
-	}
 	n := 0
 	needle := `"session_id":"` + session + `"`
-	for _, l := range strings.Split(string(b), "\n") {
-		if strings.Contains(l, needle) && strings.Contains(l, `"escalated":true`) {
-			n++
+	for _, f := range journal.Files("verify") {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		for _, l := range strings.Split(string(b), "\n") {
+			if strings.Contains(l, needle) && strings.Contains(l, `"escalated":true`) {
+				n++
+			}
 		}
 	}
 	return n
@@ -632,7 +663,7 @@ func Main(stdin io.Reader, stdout io.Writer) (code int) {
 			Skills: func(cwd string) []roster.Skill { return roster.Discover(paths.ClaudeDir(), cwd) },
 			Now:    time.Now,
 		})
-		if err := stats.Append(rec); err != nil {
+		if err := stats.Append(rec, cfg.KeepDays()); err != nil {
 			logx.Printf("hook: log decision: %v", err)
 		}
 		if rec.Error != "" {

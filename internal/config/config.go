@@ -62,6 +62,12 @@ type Config struct {
 	FindFiles *bool `json:"find_files,omitempty"`
 	// SkillAdvice can switch the skill line off (default on; JEVCC_SKILLS=0).
 	SkillAdvice *bool `json:"skill_advice,omitempty"`
+	// Trace adds the full decision inputs (routing text, thresholds, why a
+	// Stop review was skipped) to the logs. Off by default: it can hold prompt
+	// text (JEVCC_TRACE=1 turns it on).
+	Trace *bool `json:"trace,omitempty"`
+	// LogKeepDays is how many days of logs to keep (default 14).
+	LogKeepDays int `json:"log_keep_days,omitempty"`
 	// Guard turns on the PreToolUse check: risky commands and file writes
 	// become a confirmation prompt. Independent of /jev on.
 	Guard          *bool   `json:"guard,omitempty"`
@@ -130,6 +136,7 @@ func Load() (*Config, error) {
 	envBool("JEVCC_INJECTION", &c.Injection)
 	envBool("JEVCC_VERIFY", &c.Verify)
 	envBool("JEVCC_ESCALATE", &c.Escalate)
+	envBool("JEVCC_TRACE", &c.Trace)
 	if v := os.Getenv("JEVCC_MAIN"); v != "" {
 		c.MainModel = v
 	}
@@ -231,6 +238,18 @@ func (c *Config) EscalateOn() bool    { return on(c.Escalate) }
 func (c *Config) VerifyOn() bool      { return on(c.Verify) }
 func (c *Config) GuardOn() bool       { return on(c.Guard) }
 func (c *Config) InjectionOn() bool   { return on(c.Injection) }
+
+// TraceOn is off unless set: trace records hold prompt text.
+func (c *Config) TraceOn() bool { return c.Trace != nil && *c.Trace }
+
+// KeepDays is how many days of daily log files (decisions, verify, guard,
+// injection) are kept; older days are deleted on the first write of a day.
+func (c *Config) KeepDays() int {
+	if c.LogKeepDays > 0 {
+		return c.LogKeepDays
+	}
+	return 14
+}
 
 // TierNames returns the tier models, cheapest first.
 func (c *Config) TierNames() []string {

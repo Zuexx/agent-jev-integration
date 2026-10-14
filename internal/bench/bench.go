@@ -157,7 +157,7 @@ type Runner struct {
 	MaxUSD    float64
 	// Pick returns the model for the route arm and Jev's cost for that decision.
 	Pick func(ctx context.Context, prompt string) (model string, jevUSD float64, err error)
-	// JevCost sums the hook's Jev cost for a session (from decisions.jsonl).
+	// JevCost sums the hook's Jev cost for a session (from the decisions logs).
 	JevCost func(sessionID string) float64
 }
 

@@ -32,6 +32,39 @@ func TestFollowed(t *testing.T) {
 	}
 }
 
+// The default delegate_via "agent" sends subagent_type, not model.
+const agentTranscript = `{"type":"user","message":{"role":"user","content":"prove the lock is safe"}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Agent","input":{"subagent_type":"jev-opus","prompt":"x"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"}]}}
+{"type":"user","message":{"role":"user","content":"thanks"}}
+`
+
+func TestFollowedSubagentType(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "t.jsonl")
+	os.WriteFile(p, []byte(agentTranscript), 0o600)
+	if d, _, f := Followed(p, "prove the lock is safe", "opus", ""); !d || !f {
+		t.Fatal(d, f)
+	}
+	if d, _, _ := Followed(p, "prove the lock is safe", "haiku", ""); d {
+		t.Fatal("wrong tier counted as delegated")
+	}
+}
+
+func TestSummaryCountsEscalate(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "t.jsonl")
+	os.WriteFile(p, []byte(agentTranscript), 0o600)
+	recs := []Record{
+		{Time: time.Now(), SessionID: "a", Transcript: p, PromptHead: "prove the lock is safe", Advice: []string{"escalate"},
+			Decision: &router.Decision{Tier: "opus", LatencyMS: 100}},
+	}
+	s := Summary(recs, time.Time{})
+	for _, want := range []string{"delegate 1", "delegation 100% (1/1)"} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("missing %q in\n%s", want, s)
+		}
+	}
+}
+
 func TestSummary(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "t.jsonl")
 	os.WriteFile(p, []byte(transcript), 0o600)

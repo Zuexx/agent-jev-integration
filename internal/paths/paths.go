@@ -31,8 +31,6 @@ func ClaudeDir() string {
 	return filepath.Join(Home(), ".claude")
 }
 
-func DecisionLog() string { return filepath.Join(StateDir(), "decisions.jsonl") }
-
 func SessionFile(id string) string {
 	return filepath.Join(StateDir(), "sessions", filepath.Base(id)+".json")
 }

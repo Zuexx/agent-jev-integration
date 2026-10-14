@@ -10,14 +10,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/zuexx/agent-jev-integration/internal/config"
 	"github.com/zuexx/agent-jev-integration/internal/hook"
+	"github.com/zuexx/agent-jev-integration/internal/journal"
 	"github.com/zuexx/agent-jev-integration/internal/logx"
-	"github.com/zuexx/agent-jev-integration/internal/paths"
 	"github.com/zuexx/agent-jev-integration/internal/platform"
 )
 
@@ -44,6 +43,17 @@ type Session struct {
 const tailBytes = 512 << 10
 
 // readTail returns the complete lines in the last tailBytes of a file.
+// journalTail returns the recent lines of a daily log: the tail of the newest
+// file, and of the one before it when that exists.
+func journalTail(kind string) []string {
+	files := journal.Files(kind)
+	var lines []string
+	for i := len(files) - 1; i >= 0 && i >= len(files)-2; i-- {
+		lines = append(readTail(files[i]), lines...)
+	}
+	return lines
+}
+
 func readTail(path string) []string {
 	f, err := os.Open(path)
 	if err != nil {
@@ -70,7 +80,7 @@ func Count(session string) Session {
 		return s
 	}
 	needle := `"session_id":"` + session + `"`
-	for _, l := range readTail(paths.DecisionLog()) {
+	for _, l := range journalTail("decisions") {
 		if !strings.Contains(l, needle) {
 			continue
 		}
@@ -117,7 +127,7 @@ func Count(session string) Session {
 			}
 		}
 	}
-	for _, l := range readTail(filepath.Join(paths.StateDir(), "guard.jsonl")) {
+	for _, l := range journalTail("guard") {
 		if strings.Contains(l, needle) {
 			s.GuardChecked++
 			if strings.Contains(l, `"asked":true`) {
@@ -126,8 +136,9 @@ func Count(session string) Session {
 			s.CostUSD += field(l, "jev_cost_usd")
 		}
 	}
-	for _, l := range readTail(filepath.Join(paths.StateDir(), "verify.jsonl")) {
-		if strings.Contains(l, needle) {
+	for _, l := range journalTail("verify") {
+		// "skipped" lines (trace only) record a review that did not run.
+		if strings.Contains(l, needle) && !strings.Contains(l, `"skipped":`) {
 			s.Reviewed++
 			if strings.Contains(l, `"escalated":true`) {
 				s.ReviewEscalated++
@@ -135,7 +146,7 @@ func Count(session string) Session {
 			s.CostUSD += field(l, "jev_cost_usd")
 		}
 	}
-	for _, l := range readTail(filepath.Join(paths.StateDir(), "injection.jsonl")) {
+	for _, l := range journalTail("injection") {
 		if strings.Contains(l, needle) {
 			s.Screened++
 			if strings.Contains(l, `"warned":true`) {
