@@ -19,6 +19,7 @@ import (
 	"github.com/zuexx/agent-jev-integration/internal/config"
 	"github.com/zuexx/agent-jev-integration/internal/fsutil"
 	"github.com/zuexx/agent-jev-integration/internal/paths"
+	"github.com/zuexx/agent-jev-integration/internal/platform"
 	"github.com/zuexx/agent-jev-integration/internal/roster"
 )
 
@@ -87,15 +88,10 @@ func (o Options) claudeDir() string {
 	return filepath.Join(o.Dir, ".claude")
 }
 
-func quote(s string) string {
-	if strings.ContainsAny(s, " '\"$`\\") {
-		return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-	}
-	return s
-}
+func quote(s string) string { return platform.ShellCommand(s) }
 
 // HookCommand is the command line written into settings.json.
-func HookCommand(exe string) string { return quote(exe) + " hook" }
+func HookCommand(exe string) string { return platform.ShellCommand(exe, "hook") }
 
 func isOurs(cmd string) bool {
 	return strings.Contains(cmd, "jevcc") && strings.HasSuffix(cmd, " hook")
@@ -341,7 +337,7 @@ func WrapStatusline(raw []byte, exe string) ([]byte, string, error) {
 		inner = c
 	}
 	sl["type"] = "command"
-	sl["command"] = quote(exe) + " statusline"
+	sl["command"] = platform.ShellCommand(exe, "statusline")
 	doc["statusLine"] = sl
 	out, err := fsutil.Marshal(doc)
 	return out, inner, err

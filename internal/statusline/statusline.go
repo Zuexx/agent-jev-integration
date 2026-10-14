@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -19,6 +18,7 @@ import (
 	"github.com/zuexx/agent-jev-integration/internal/hook"
 	"github.com/zuexx/agent-jev-integration/internal/logx"
 	"github.com/zuexx/agent-jev-integration/internal/paths"
+	"github.com/zuexx/agent-jev-integration/internal/platform"
 )
 
 type Input struct {
@@ -266,13 +266,13 @@ func Main(stdin io.Reader, stdout io.Writer) (code int) {
 	if cfg.StatuslineInner != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, "sh", "-c", cfg.StatuslineInner)
+		cmd := platform.ShellCmd(ctx, cfg.StatuslineInner)
 		cmd.Stdin = bytes.NewReader(raw)
 		out, err := cmd.Output()
 		if err != nil {
 			logx.Printf("statusline inner: %v", err)
 		}
-		out = bytes.TrimRight(out, "\n")
+		out = bytes.TrimRight(out, "\r\n")
 		if len(out) > 0 {
 			stdout.Write(out)
 			stdout.Write([]byte("\n"))

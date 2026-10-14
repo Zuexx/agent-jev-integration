@@ -33,9 +33,11 @@ func TestApplyAndRevertKeepOtherHooks(t *testing.T) {
 	}
 }
 
-func TestQuote(t *testing.T) {
-	if HookCommand("/a b/jevcc") != "'/a b/jevcc' hook" || HookCommand("/x/jevcc") != "/x/jevcc hook" {
-		t.Fatal(HookCommand("/a b/jevcc"))
+func TestHookCommandIsOurs(t *testing.T) {
+	for _, exe := range []string{"/a b/jevcc", "/x/jevcc", `C:\Users\me\go\bin\jevcc.exe`} {
+		if c := HookCommand(exe); !isOurs(c) {
+			t.Fatalf("%q not recognised as ours", c)
+		}
 	}
 }
 

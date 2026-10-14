@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -43,6 +44,9 @@ echo '{"total_cost_usd":0.5,"num_turns":3,"session_id":"S","is_error":false,"mod
 }
 
 func TestDoRouteArm(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as a fake claude")
+	}
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, "fixture"), 0o755)
 	os.WriteFile(filepath.Join(dir, "fixture", "in.txt"), []byte("x"), 0o644)
