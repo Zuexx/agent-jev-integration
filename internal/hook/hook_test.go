@@ -21,6 +21,7 @@ import (
 )
 
 func setup(t *testing.T) *config.Config {
+	startWarm = func() {}
 	t.Setenv("JEVCC_HOME", t.TempDir())
 	t.Setenv("JEVCC_MODE", "")
 	t.Setenv("TYPESAFE_API_KEY", "k")

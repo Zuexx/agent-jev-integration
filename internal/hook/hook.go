@@ -125,7 +125,7 @@ func Command(in Input, cfg *config.Config) (out *Output, ok bool) {
 		if cfg.APIKey == "" {
 			msg += "\n⚠ no TypeSafe API key: run `jevcc key` in a terminal, or prompts will pass through without advice."
 		} else {
-			Warm()
+			startWarm()
 		}
 		return block("%s", msg), true
 	case "status", "":
@@ -351,6 +351,10 @@ func fileHint(ctx context.Context, in Input, d Deps) string {
 	}
 	return "- Files: most likely relevant here: " + strings.Join(parts, ", ") + ". Open these first; search wider only if they do not have it."
 }
+
+// startWarm is Warm, replaced in tests: there os.Executable is the test
+// binary, and a detached copy of it would keep running after the test.
+var startWarm = Warm
 
 // Warm starts `jevcc warm` in the background: one small Jev call, so a slow
 // first response lands before the user's next prompt instead of timing it out.
