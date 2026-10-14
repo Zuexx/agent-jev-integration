@@ -16,11 +16,11 @@ func TestApplyAndRevertKeepOtherHooks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !HasOurHook(out) || !strings.Contains(string(out), "cswitch hook") || strings.Count(string(out), "jevcc hook") != 4 || !strings.Contains(string(out), `"Stop"`) {
+	if !HasOurHook(out) || !strings.Contains(string(out), "cswitch hook") || ours(t, out) != 4 || !strings.Contains(string(out), `"Stop"`) {
 		t.Fatal(string(out))
 	}
 	again, _ := ApplySettings(out, "/usr/local/bin/jevcc")
-	if strings.Count(string(again), "jevcc hook") != 4 {
+	if ours(t, again) != 4 {
 		t.Fatal("install is not idempotent")
 	}
 	back, err := RevertSettings(again)
@@ -61,7 +61,7 @@ func TestInstallProjectAndLocalScopes(t *testing.T) {
 		t.Fatal(err)
 	}
 	cls, err := os.ReadFile(filepath.Join(dir, ".claude", "commands", "jev-classify.md"))
-	if err != nil || !strings.Contains(string(cls), "/opt/jevcc classify") || strings.Contains(string(cls), "{{JEVCC}}") {
+	if err != nil || !strings.Contains(string(cls), quote("/opt/jevcc")+" classify") || strings.Contains(string(cls), "{{JEVCC}}") {
 		t.Fatal(string(cls), err)
 	}
 	var doc bytes.Buffer
@@ -162,7 +162,7 @@ func TestDefaultModelSetAndRestored(t *testing.T) {
 func TestStatuslineWrapRoundTrip(t *testing.T) {
 	in := []byte(`{"statusLine":{"type":"command","command":"'/Users/x/go/bin/cswitch' statusline"}}`)
 	out, inner, err := WrapStatusline(in, "/opt/jevcc")
-	if err != nil || inner != "'/Users/x/go/bin/cswitch' statusline" || !strings.Contains(string(out), "/opt/jevcc statusline") {
+	if err != nil || inner != "'/Users/x/go/bin/cswitch' statusline" || !isOurStatusline(statuslineCmd(t, out)) {
 		t.Fatal(string(out), inner, err)
 	}
 	again, inner2, _ := WrapStatusline(out, "/opt/jevcc")
@@ -172,5 +172,38 @@ func TestStatuslineWrapRoundTrip(t *testing.T) {
 	back, _ := UnwrapStatusline(out, inner)
 	if !strings.Contains(string(back), "cswitch' statusline") || strings.Contains(string(back), "jevcc") {
 		t.Fatal(string(back))
+	}
+}
+
+// ours counts jevcc hook entries across all events in a settings document.
+func ours(t *testing.T, raw []byte) int {
+	t.Helper()
+	doc, err := parseSettings(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hooks, _ := doc["hooks"].(map[string]any)
+	n := 0
+	for _, ev := range Events {
+		n += countOurs(asSlice(hooks[ev]))
+	}
+	return n
+}
+
+func statuslineCmd(t *testing.T, raw []byte) string {
+	t.Helper()
+	doc, err := parseSettings(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sl, _ := doc["statusLine"].(map[string]any)
+	c, _ := sl["command"].(string)
+	return c
+}
+
+func TestBackupNameIsPortable(t *testing.T) {
+	got := backupName(`C:\Users\me\.claude\settings.json`)
+	if strings.ContainsAny(got, `:\/`) || !strings.HasSuffix(got, "settings.json") {
+		t.Fatal(got)
 	}
 }

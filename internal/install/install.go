@@ -248,6 +248,18 @@ func AgentsJSON() string {
 	return string(b)
 }
 
+// backupName turns a settings path into a file name that is valid on every
+// OS (no separators, and no ':' as in Windows drive letters).
+func backupName(p string) string {
+	return strings.Trim(strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '-':
+			return r
+		}
+		return '_'
+	}, p), "_")
+}
+
 // writeFollowingLinks writes through a symlink (dotfile managers) instead of replacing it.
 func writeFollowingLinks(path string, data []byte, perm os.FileMode) error {
 	if real, err := filepath.EvalSymlinks(path); err == nil {
@@ -263,7 +275,7 @@ func Install(o Options) error {
 		return err
 	}
 	if err == nil {
-		backup := filepath.Join(paths.StateDir(), "backup", strings.ReplaceAll(strings.TrimPrefix(sp, string(filepath.Separator)), string(filepath.Separator), "_")+"."+o.Now.Format("20060102-150405"))
+		backup := filepath.Join(paths.StateDir(), "backup", backupName(sp)+"."+o.Now.Format("20060102-150405"))
 		if err := fsutil.WriteFileAtomic(backup, raw, 0o600); err != nil {
 			return err
 		}

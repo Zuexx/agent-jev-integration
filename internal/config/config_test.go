@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"runtime"
 	"testing"
 )
 
@@ -33,8 +34,10 @@ func TestSaveKeyKeepsOtherFields(t *testing.T) {
 	if c.APIKey != "k1" || !c.DefaultOn || c.TierNames()[1] != "fable" {
 		t.Fatalf("%+v", c)
 	}
-	fi, _ := os.Stat(Path())
-	if fi.Mode().Perm() != 0o600 {
-		t.Fatal(fi.Mode())
+	if runtime.GOOS != "windows" { // Windows has no Unix permission bits
+		fi, _ := os.Stat(Path())
+		if fi.Mode().Perm() != 0o600 {
+			t.Fatal(fi.Mode())
+		}
 	}
 }

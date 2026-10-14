@@ -1,6 +1,7 @@
 package roster
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -42,10 +43,12 @@ func TestDiscover(t *testing.T) {
 	write(t, filepath.Join(pl, "skills", "brainstorm", "SKILL.md"), "---\nname: brainstorm\ndescription: plugin skill\n---\n")
 	write(t, filepath.Join(off, "skills", "x", "SKILL.md"), "---\nname: x\n---\n")
 	write(t, filepath.Join(other, "skills", "y", "SKILL.md"), "---\nname: y\n---\n")
-	write(t, filepath.Join(claude, "plugins", "installed_plugins.json"), `{"version":2,"plugins":{
-	  "sp@official":[{"scope":"user","installPath":"`+pl+`"}],
-	  "off@m":[{"scope":"user","installPath":"`+off+`"}],
-	  "other@m":[{"scope":"project","projectPath":"/elsewhere","installPath":"`+other+`"}]}}`)
+	inst, _ := json.Marshal(map[string]any{"version": 2, "plugins": map[string]any{
+		"sp@official": []any{map[string]any{"scope": "user", "installPath": pl}},
+		"off@m":       []any{map[string]any{"scope": "user", "installPath": off}},
+		"other@m":     []any{map[string]any{"scope": "project", "projectPath": "/elsewhere", "installPath": other}},
+	}})
+	write(t, filepath.Join(claude, "plugins", "installed_plugins.json"), string(inst))
 	write(t, filepath.Join(claude, "settings.json"), `{"enabledPlugins":{"off@m":false}}`)
 
 	got := Discover(claude, proj)
