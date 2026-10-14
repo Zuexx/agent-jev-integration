@@ -1,0 +1,6 @@
+{
+ "prompt": "Implement cron.Next exactly as its doc comment specifies, including the day-of-month / day-of-week rule, Sunday as 0 or 7, and the error cases. Add unit tests.",
+ "check": "cp \"$TASK_DIR/testdata/hidden_test.go\" cron/zz_hidden_test.go && go test ./...",
+ "tier": "opus",
+ "timeout_s": 600
+}

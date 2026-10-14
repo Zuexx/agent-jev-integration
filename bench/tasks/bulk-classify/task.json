@@ -1,0 +1,6 @@
+{
+ "prompt": "Label every ticket in tickets.csv as billing, technical or sales. Write labels.csv with the header id,label and one row per ticket.",
+ "check": "python3 -I -c \"$(cat <<'EOT'\nimport csv,sys\ngold={\"1\":\"technical\",\"2\":\"sales\",\"3\":\"billing\",\"4\":\"technical\",\"5\":\"billing\",\"6\":\"sales\",\"7\":\"billing\",\"8\":\"technical\",\"9\":\"technical\",\"10\":\"sales\",\"11\":\"sales\",\"12\":\"sales\",\"13\":\"technical\",\"14\":\"billing\",\"15\":\"billing\",\"16\":\"sales\",\"17\":\"technical\",\"18\":\"billing\",\"19\":\"sales\",\"20\":\"technical\",\"21\":\"technical\",\"22\":\"sales\",\"23\":\"technical\",\"24\":\"billing\",\"25\":\"technical\",\"26\":\"technical\",\"27\":\"technical\",\"28\":\"billing\",\"29\":\"sales\",\"30\":\"sales\",\"31\":\"sales\",\"32\":\"billing\",\"33\":\"billing\",\"34\":\"billing\",\"35\":\"sales\",\"36\":\"sales\",\"37\":\"technical\",\"38\":\"billing\",\"39\":\"sales\",\"40\":\"billing\",\"41\":\"billing\",\"42\":\"sales\",\"43\":\"technical\",\"44\":\"billing\",\"45\":\"technical\"}\ngot={r['id'].strip():r['label'].strip().lower() for r in csv.DictReader(open('labels.csv'))}\nok=sum(got.get(k)==v for k,v in gold.items())\nprint(f'{ok}/{len(gold)} correct')\nsys.exit(0 if ok>=0.9*len(gold) and len(got)==len(gold) else 1)\nEOT\n)\"",
+ "tier": "sonnet",
+ "timeout_s": 600
+}

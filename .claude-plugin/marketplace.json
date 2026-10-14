@@ -1,0 +1,14 @@
+{
+  "name": "jevcc",
+  "description": "jevcc: TypeSafe Jev integrated into Claude Code",
+  "owner": {
+    "name": "zuexx"
+  },
+  "plugins": [
+    {
+      "name": "jevcc",
+      "source": "./plugin",
+      "description": "Jev routing, bulk classification, semantic lint and checklist review for Claude Code"
+    }
+  ]
+}

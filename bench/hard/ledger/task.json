@@ -1,0 +1,6 @@
+{
+ "prompt": "Finance says the monthly report is sometimes off by a cent and go test fails. Find and fix the root causes in package ledger so it does what its doc comments promise. Do not change report_test.go.",
+ "check": "cp \"$TASK_DIR/testdata/hidden_test.go\" ledger/zz_hidden_test.go && go test ./... && test \"$(shasum -a 256 ledger/report_test.go | cut -c1-64)\" = 74fd1d3abc533306f799b1a1e1d5ade1267c809b639bc1f25d5ce12b910df3ef",
+ "tier": "opus",
+ "timeout_s": 600
+}

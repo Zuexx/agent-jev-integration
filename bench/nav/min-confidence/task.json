@@ -1,0 +1,11 @@
+{
+ "prompt": "In this Go code base, what is the default value of the min_confidence setting when the config file does not set it? Write only the number into answer.txt.",
+ "check": "test \"$(tr -d '[:space:]' < answer.txt)\" = 0.75",
+ "tier": "haiku",
+ "timeout_s": 300,
+ "fixture_from": [
+  "../../../go.mod",
+  "../../../cmd",
+  "../../../internal"
+ ]
+}

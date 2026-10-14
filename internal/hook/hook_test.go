@@ -1,0 +1,173 @@
+package hook
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/zuexx/agent-jev-integration/internal/config"
+	"github.com/zuexx/agent-jev-integration/internal/jev"
+	"github.com/zuexx/agent-jev-integration/internal/paths"
+	"github.com/zuexx/agent-jev-integration/internal/roster"
+	"github.com/zuexx/agent-jev-integration/internal/stats"
+)
+
+func setup(t *testing.T) *config.Config {
+	t.Setenv("JEVCC_HOME", t.TempDir())
+	t.Setenv("JEVCC_MODE", "")
+	t.Setenv("TYPESAFE_API_KEY", "k")
+	c, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func TestToggleIsPerSession(t *testing.T) {
+	cfg := setup(t)
+	if out, ok := Command(Input{SessionID: "s1", Prompt: "/jev on"}, cfg); !ok || out.Decision != "block" || !strings.Contains(out.Reason, "ON") {
+		t.Fatalf("%+v", out)
+	}
+	if !Enabled(cfg, "s1") || Enabled(cfg, "s2") {
+		t.Fatal("toggle leaked across sessions")
+	}
+	Command(Input{SessionID: "s1", Prompt: "/jev off"}, cfg)
+	if Enabled(cfg, "s1") {
+		t.Fatal("still on")
+	}
+	t.Setenv("JEVCC_MODE", "on")
+	if !Enabled(cfg, "s1") {
+		t.Fatal("env override ignored")
+	}
+}
+
+func TestIgnoresOtherPrompts(t *testing.T) {
+	cfg := setup(t)
+	for _, p := range []string{"hello", "/jevx", "/jev-classify a.csv", "please /jev on", ""} {
+		if _, ok := Command(Input{SessionID: "s", Prompt: p}, cfg); ok {
+			t.Fatalf("%q handled", p)
+		}
+	}
+}
+
+type errAsker struct{}
+
+func (errAsker) Ask(context.Context, any, map[string]jev.Question) (*jev.Response, error) {
+	return nil, errors.New("timeout")
+}
+
+func TestRouteErrorIsSilentButLogged(t *testing.T) {
+	cfg := setup(t)
+	out, rec := Route(context.Background(), Input{SessionID: "s", Prompt: "x"}, Deps{
+		Config: cfg, Asker: errAsker{}, Skills: func(string) []roster.Skill { return nil }, Now: time.Now,
+	})
+	if out != nil || rec.Error != "timeout" {
+		t.Fatalf("%+v %+v", out, rec)
+	}
+}
+
+func TestMainEndToEnd(t *testing.T) {
+	cfg := setup(t)
+	_ = cfg
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"model":"jev-1.13.0","answers":{"tier":{"type":"choice","choice":"haiku","confidence":0.9,"probabilities":{"haiku":0.95,"sonnet":0.05}},"bulk":{"type":"noul","noul":0.02}},"usage":{"input_tokens":500}}`))
+	}))
+	defer srv.Close()
+	t.Setenv("TYPESAFE_ENDPOINT", srv.URL)
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir()) // no skills
+	t.Setenv("JEVCC_MODE", "on")
+	os.WriteFile(config.Path(), []byte(`{"delegate":true}`), 0o600)
+	in, _ := json.Marshal(Input{SessionID: "s", Prompt: "where is main.go?", Cwd: t.TempDir()})
+	var out bytes.Buffer
+	if code := Main(bytes.NewReader(in), &out); code != 0 {
+		t.Fatal(code)
+	}
+	var o Output
+	if err := json.Unmarshal(out.Bytes(), &o); err != nil || o.Specific == nil || !strings.Contains(o.Specific.AdditionalContext, `"jev-haiku"`) {
+		t.Fatalf("%s %v", out.String(), err)
+	}
+	recs, err := stats.Load(paths.DecisionLog())
+	if err != nil || len(recs) != 1 || recs[0].Decision.Tier != "haiku" || recs[0].Advice[0] != "tier" {
+		t.Fatalf("%+v %v", recs, err)
+	}
+}
+
+func TestMainNeverFails(t *testing.T) {
+	setup(t)
+	var out bytes.Buffer
+	if Main(strings.NewReader("not json"), &out) != 0 || out.Len() != 0 {
+		t.Fatal("bad input must be silent")
+	}
+	// routing off: nothing printed, nothing logged
+	in, _ := json.Marshal(Input{SessionID: "s", Prompt: "hello"})
+	Main(bytes.NewReader(in), &out)
+	if out.Len() != 0 {
+		t.Fatal(out.String())
+	}
+	if _, err := os.Stat(filepath.Join(paths.StateDir(), "decisions.jsonl")); err == nil {
+		t.Fatal("logged while off")
+	}
+}
+
+func TestFirstDedupesAcrossScopes(t *testing.T) {
+	setup(t)
+	in := Input{SessionID: "s", Prompt: "same"}
+	if !First(in) || First(in) {
+		t.Fatal("second run of the same prompt must be skipped")
+	}
+	if !First(Input{SessionID: "s", Prompt: "other"}) {
+		t.Fatal("different prompt skipped")
+	}
+}
+
+func TestSessionTier(t *testing.T) {
+	cfg := setup(t)
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	t.Setenv("ANTHROPIC_MODEL", "")
+	dir := t.TempDir()
+	tr := filepath.Join(dir, "t.jsonl")
+	os.WriteFile(tr, []byte(`{"type":"assistant","message":{"model":"claude-opus-5-5"}}
+{"type":"assistant","message":{"model":"claude-haiku-5-5"}}
+`), 0o600)
+	if got := SessionTier(Input{TranscriptPath: tr}, cfg); got != "haiku" {
+		t.Fatal("transcript", got)
+	}
+	os.MkdirAll(filepath.Join(dir, ".claude"), 0o755)
+	os.WriteFile(filepath.Join(dir, ".claude", "settings.json"), []byte(`{"model":"sonnet"}`), 0o600)
+	if got := SessionTier(Input{Cwd: dir}, cfg); got != "sonnet" {
+		t.Fatal("settings", got)
+	}
+	if got := SessionTier(Input{}, cfg); got != "" {
+		t.Fatal("unknown", got)
+	}
+}
+
+func TestStatuslineCommandAndStatus(t *testing.T) {
+	cfg := setup(t)
+	out, ok := Command(Input{SessionID: "s", Prompt: "/jev statusline compact"}, cfg)
+	if !ok || !strings.Contains(out.Reason, "compact") {
+		t.Fatalf("%+v", out)
+	}
+	c2, _ := config.Load()
+	if c2.Statusline != "compact" {
+		t.Fatal(c2.Statusline)
+	}
+	out, _ = Command(Input{SessionID: "s", Prompt: "/jev statusline nope"}, cfg)
+	if !strings.Contains(out.Reason, "usage") {
+		t.Fatal(out.Reason)
+	}
+	out, _ = Command(Input{SessionID: "s", Prompt: "/jev status"}, cfg)
+	for _, want := range []string{"session model", "guard risky commands", "screen fetched content", "statusline"} {
+		if !strings.Contains(out.Reason, want) {
+			t.Fatalf("missing %q in\n%s", want, out.Reason)
+		}
+	}
+}

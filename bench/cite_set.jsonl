@@ -1,0 +1,12 @@
+{"claim": "Jev is priced at 0.042 dollars per million input tokens", "quote": "Price: $0.042 per million input tokens, output free", "source": "docs/design.md", "expected": "verified"}
+{"claim": "Jev answers Choice, Score and Noul questions", "quote": "answers typed questions — Choice, Score, Noul", "source": "docs/design.md", "expected": "verified"}
+{"claim": "The hook gives no advice when Jev's confidence is low", "quote": "Low confidence → no advice (confidence-gated routing)", "source": "docs/design.md", "expected": "verified"}
+{"claim": "Hook errors never break Claude", "quote": "Any error or timeout → no output; the hook never breaks", "source": "docs/design.md", "expected": "verified"}
+{"claim": "Jev can serve as the model behind Claude Code", "quote": "the docs say plainly that it cannot be the model behind Claude Code", "source": "docs/design.md", "expected": "contradicted"}
+{"claim": "The skill suggestion reduces the tokens of the skill listing Claude Code sends", "quote": "the skill index Claude Code already sends is unchanged", "source": "docs/design.md", "expected": "contradicted"}
+{"claim": "A UserPromptSubmit hook can change the session's model", "quote": "A hook cannot change the session's model", "source": "docs/design.md", "expected": "contradicted"}
+{"claim": "The bench grades quality with an LLM judge", "quote": "Quality is a deterministic check command per task", "source": "docs/design.md", "expected": "contradicted"}
+{"claim": "Jev was trained on 40 billion tokens", "quote": "Jev was trained on 40 billion tokens of agent traces", "source": "docs/design.md", "expected": "fabricated"}
+{"claim": "The router supports 12 tiers", "quote": "the router supports up to twelve model tiers", "source": "docs/design.md", "expected": "fabricated"}
+{"claim": "Rate limit is 80 requests per second", "quote": "rate limit 80 req/s", "source": "docs/design.md", "expected": "verified"}
+{"claim": "The browser adversarial testing was built", "quote": "Not built: the head-less browser adversarial testing", "source": "docs/design.md", "expected": "contradicted"}

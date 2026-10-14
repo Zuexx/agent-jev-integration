@@ -1,0 +1,6 @@
+{
+ "prompt": "Implement semver.Compare exactly as Semantic Versioning 2.0.0 defines precedence and validity (https://semver.org): numeric identifiers must not have leading zeros, pre-release and build identifiers must be non-empty and use [0-9A-Za-z-], build metadata is ignored for precedence, and no 'v' prefix is allowed. Return an error for any invalid version. Add unit tests.",
+ "check": "cp \"$TASK_DIR/testdata/hidden_test.go\" semver/zz_hidden_test.go && go test ./...",
+ "tier": "opus",
+ "timeout_s": 600
+}

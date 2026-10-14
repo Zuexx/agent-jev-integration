@@ -1,0 +1,7 @@
+.DS_Store
+/jevcc
+/dist/
+/bench/results/
+# video transcript: the creator's content, kept local only
+/docs/transcript.zh-TW.txt
+/docs/*.vtt

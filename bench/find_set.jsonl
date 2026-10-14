@@ -1,0 +1,20 @@
+{"question": "where is the decision about whether to escalate to a stronger model turned into text for Claude", "file": "internal/router/router.go"}
+{"question": "which code reads the TypeSafe API key from the environment", "file": "internal/config/config.go"}
+{"question": "where are retries with backoff on HTTP 429 handled", "file": "internal/jev/jev.go"}
+{"question": "how does the /jev on command store the per-session switch", "file": "internal/hook/hook.go"}
+{"question": "where is the skill list discovered from installed plugins", "file": "internal/roster/roster.go"}
+{"question": "which file computes Wilson confidence intervals", "file": "internal/eval/eval.go"}
+{"question": "where is the bootstrap confidence interval for cost differences", "file": "internal/bench/bench.go"}
+{"question": "what writes the hook into settings.json without removing other hooks", "file": "internal/install/install.go"}
+{"question": "where are skills hidden with skillOverrides name-only", "file": "internal/install/skills.go"}
+{"question": "which code decides that a shell command is dangerous before it runs", "file": "internal/guard/guard.go"}
+{"question": "where is the Stop hook review that checks whether the agent ran tests", "file": "internal/verify/verify.go"}
+{"question": "which code splits a git diff into hunks", "file": "internal/review/review.go"}
+{"question": "where is the default checklist of review questions", "file": "internal/review/checklist.go"}
+{"question": "which code extracts comment blocks and log lines from source files", "file": "internal/lint/lint.go"}
+{"question": "where are rows of a CSV file loaded for bulk classification", "file": "internal/classify/classify.go"}
+{"question": "which code checks whether Claude followed the delegation advice in the transcript", "file": "internal/stats/stats.go"}
+{"question": "where is the decisions log path defined", "file": "internal/paths/paths.go"}
+{"question": "which code writes files atomically through a temp file", "file": "internal/fsutil/fsutil.go"}
+{"question": "where is the background warm-up started when routing is turned on", "file": "internal/hook/hook.go"}
+{"question": "which command line entry dispatches subcommands like bench and eval", "file": "cmd/jevcc/main.go"}

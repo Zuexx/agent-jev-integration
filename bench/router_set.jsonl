@@ -1,0 +1,60 @@
+{"prompt": "Where is the function that parses the config file defined?", "tier": "haiku", "skill": "none"}
+{"prompt": "list all TODO comments in the repo", "tier": "haiku", "skill": "none"}
+{"prompt": "rename the variable `cnt` to `count` in utils.go", "tier": "haiku", "skill": "none"}
+{"prompt": "What arguments does NewRunner take?", "tier": "haiku", "skill": "none"}
+{"prompt": "convert this JSON to YAML: {\"a\":1,\"b\":[2,3]}", "tier": "haiku", "skill": "none"}
+{"prompt": "run go test ./... and tell me if anything fails", "tier": "haiku", "skill": "none"}
+{"prompt": "幫我找一下 hook.go 在哪個資料夾", "tier": "haiku", "skill": "none"}
+{"prompt": "把 README 裡的英文標題翻成繁體中文", "tier": "haiku", "skill": "none"}
+{"prompt": "What does the -p flag do in the claude CLI?", "tier": "haiku", "skill": "none"}
+{"prompt": "show me the last 5 commits", "tier": "haiku", "skill": "none"}
+{"prompt": "format this as a markdown table: name, age; Ann 30; Bob 25", "tier": "haiku", "skill": "none"}
+{"prompt": "這個函式 Percentile 回傳什麼？", "tier": "haiku", "skill": "none"}
+{"prompt": "add .DS_Store to .gitignore", "tier": "haiku", "skill": "none"}
+{"prompt": "what's the Go version in go.mod?", "tier": "haiku", "skill": "none"}
+{"prompt": "What's the difference between a mutex and a semaphore?", "tier": "haiku", "skill": "none"}
+{"prompt": "explain what a monad is", "tier": "haiku", "skill": "none"}
+{"prompt": "thanks, that worked!", "tier": "haiku", "skill": "none"}
+{"prompt": "Post this summary to our Slack channel", "tier": "haiku", "skill": "none"}
+{"prompt": "Add these three cards to our Trello backlog", "tier": "haiku", "skill": "none"}
+{"prompt": "summarize the diff of the last commit in 3 bullets", "tier": "haiku", "skill": "none"}
+{"prompt": "Start this feature in an isolated git worktree", "tier": "haiku", "skill": "superpowers:using-git-worktrees"}
+{"prompt": "Add a --verbose flag to the CLI that prints each request's latency", "tier": "sonnet", "skill": "none"}
+{"prompt": "Write unit tests for the Wilson interval function", "tier": "sonnet", "skill": "tdd|superpowers:test-driven-development"}
+{"prompt": "Implement CSV export for the stats command, test-first", "tier": "sonnet", "skill": "tdd|superpowers:test-driven-development"}
+{"prompt": "幫我用 TDD 加一個解析日期的函式", "tier": "sonnet", "skill": "tdd|superpowers:test-driven-development"}
+{"prompt": "TestPlanCoversEverything fails with 'expected 12 got 11', fix it", "tier": "sonnet", "skill": "superpowers:systematic-debugging|diagnosing-bugs"}
+{"prompt": "I have a merge conflict in go.mod after rebasing, resolve it", "tier": "sonnet", "skill": "resolving-merge-conflicts"}
+{"prompt": "Set up husky pre-commit hooks with prettier for this repo", "tier": "sonnet", "skill": "setup-pre-commit"}
+{"prompt": "Add a Claude Code hook that blocks git push --force and reset --hard", "tier": "sonnet", "skill": "git-guardrails-claude-code"}
+{"prompt": "Refactor the duplicated retry logic in client.go and fetch.go into one helper", "tier": "sonnet", "skill": "none"}
+{"prompt": "幫我寫這個 package 的 README，說明安裝跟使用方式", "tier": "sonnet", "skill": "none"}
+{"prompt": "Replace the `as` casts in our test files with shoehorn", "tier": "sonnet", "skill": "migrate-to-shoehorn"}
+{"prompt": "Add pagination to the /users endpoint, page size 50", "tier": "sonnet", "skill": "none"}
+{"prompt": "write a GitHub Actions workflow that runs go vet and go test on push", "tier": "sonnet", "skill": "none"}
+{"prompt": "Review my changes since main before I open the PR", "tier": "sonnet", "skill": "code-review|superpowers:requesting-code-review"}
+{"prompt": "I got review comments on my PR; help me work through them and push back where they're wrong", "tier": "sonnet", "skill": "superpowers:receiving-code-review"}
+{"prompt": "Create a new skill that formats commit messages the way our team likes", "tier": "sonnet", "skill": "superpowers:writing-skills|writing-for-agents"}
+{"prompt": "Implementation is done and tests pass; what's next to get this branch merged?", "tier": "sonnet", "skill": "superpowers:finishing-a-development-branch"}
+{"prompt": "Create an exercise section with 3 problems on Go generics", "tier": "sonnet", "skill": "scaffold-exercises"}
+{"prompt": "Execute the plan in docs/plans/2026-10-01-export.md task by task", "tier": "sonnet", "skill": "superpowers:executing-plans|superpowers:subagent-driven-development"}
+{"prompt": "Update CLAUDE.md with the new build and test commands", "tier": "sonnet", "skill": "writing-for-agents"}
+{"prompt": "Prototype two layouts for the settings page so I can compare them", "tier": "sonnet", "skill": "prototype"}
+{"prompt": "These 4 test suites fail for unrelated reasons; fix them in parallel", "tier": "sonnet", "skill": "superpowers:dispatching-parallel-agents"}
+{"prompt": "Make me an interactive script that walks me through creating the AWS credentials and GitHub secrets", "tier": "sonnet", "skill": "wizard"}
+{"prompt": "Before I tell the team it's done: verify the fix actually works", "tier": "sonnet", "skill": "superpowers:verification-before-completion"}
+{"prompt": "My last superpowers session kept redoing the same work — why did that happen?", "tier": "sonnet", "skill": "superpowers:diagnosing-superpowers"}
+{"prompt": "你覺得 Go 跟 Rust 哪個比較適合寫 CLI 工具？", "tier": "sonnet", "skill": "none"}
+{"prompt": "Our service leaks memory slowly under load and we have no idea why; figure it out", "tier": "opus", "skill": "superpowers:systematic-debugging|diagnosing-bugs"}
+{"prompt": "There's a race condition somewhere that causes duplicate payments about once a week; find it", "tier": "opus", "skill": "superpowers:systematic-debugging|diagnosing-bugs"}
+{"prompt": "Why is p95 latency 3x worse since the last release? Here are the flame graphs", "tier": "opus", "skill": "superpowers:systematic-debugging|diagnosing-bugs"}
+{"prompt": "Design the architecture for multi-tenant support in our API: data isolation, auth, billing", "tier": "opus", "skill": "superpowers:brainstorming|codebase-design"}
+{"prompt": "I want to let users share dashboards with each other. Let's think it through before coding", "tier": "opus", "skill": "superpowers:brainstorming"}
+{"prompt": "Grill me on my plan to migrate from Postgres to DynamoDB", "tier": "opus", "skill": "grilling"}
+{"prompt": "Write an implementation plan for adding offline sync to the mobile app", "tier": "opus", "skill": "superpowers:writing-plans"}
+{"prompt": "Research how other CLIs implement the OAuth device flow and write up the findings with sources", "tier": "opus", "skill": "research"}
+{"prompt": "The module boundaries in internal/ are a mess; propose deeper modules with smaller interfaces", "tier": "opus", "skill": "codebase-design"}
+{"prompt": "Pin down the terminology for our billing domain: invoice, charge, credit, refund", "tier": "opus", "skill": "domain-modeling"}
+{"prompt": "我們的系統要從單體拆成微服務，幫我想一下怎麼拆、風險在哪", "tier": "opus", "skill": "superpowers:brainstorming|codebase-design"}
+{"prompt": "Decide whether to use event sourcing for the order system and record the decision", "tier": "opus", "skill": "domain-modeling|superpowers:brainstorming"}
+{"prompt": "Audit our auth flow for security issues: token storage, refresh, CSRF", "tier": "opus"}

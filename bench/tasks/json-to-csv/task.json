@@ -1,0 +1,3 @@
+{"prompt": "Convert data.json into data.csv with the header id,name,email (in that order), one row per object, sorted by id ascending. Quote fields only when needed.",
+ "check": "printf 'id,name,email\\n1,Bob,bob@example.com\\n2,\"Cy, Jr.\",cy@example.com\\n3,Ann,ann@example.com\\n' > /tmp/jevcc-expected-$$ && tr -d '\\r' < data.csv | diff - /tmp/jevcc-expected-$$",
+ "tier": "haiku", "timeout_s": 300}

@@ -1,0 +1,46 @@
+id,text
+1,SSO with Okta fails with 'invalid audience' error.
+2,Do you offer discounts for non-profits?
+3,My trial ended and I got charged without a reminder email.
+4,The API returns 500 errors on every POST to /orders since this morning.
+5,Is there a way to pay by bank transfer instead of card?
+6,Do you offer education pricing for universities?
+7,"Your system keeps retrying a card that expired, stop charging it."
+8,The mobile app crashes when I open the settings screen on Android 15.
+9,Search results don't include documents created in the last hour.
+10,"We want to upgrade the whole company, what are the options?"
+11,Do you have reseller or partner programs?
+12,Are volume discounts available above 500 users?
+13,Rate limit 429 errors even though we send 5 requests per minute.
+14,Cancel my subscription at the end of this billing period please.
+15,I was charged twice for my October invoice.
+16,Can you send a quote we can forward to procurement?
+17,CSV export produces an empty file for reports over 10k rows.
+18,Where can I download all past invoices as PDF?
+19,"We are evaluating you against a competitor, can we talk to someone?"
+20,How do I rotate the API key without downtime?
+21,The import tool mangles accented characters like é and ü.
+22,What's included in the Pro plan compared to Business?
+23,"I can't log in, the 2FA code is always rejected."
+24,How do I update the credit card on file?
+25,Notifications are sent twice for every new comment.
+26,Webhooks stopped arriving at our endpoint after your maintenance window.
+27,Our Zapier integration says the connection is unauthorized.
+28,I need a receipt for last month's payment for my expense report.
+29,Can we extend our trial by two weeks to finish the evaluation?
+30,What's the price for 200 seats on the enterprise plan?
+31,Can we get a custom contract with a 99.9% SLA?
+32,Can I switch from monthly to yearly billing and get the discount?
+33,Please refund the annual plan I bought by mistake yesterday.
+34,I applied a coupon code but the discount isn't on the invoice.
+35,We'd like a demo for our team next week.
+36,Who can I talk to about a multi-year deal?
+37,The Python SDK throws a timeout on uploads larger than 50 MB.
+38,The payment failed but the money left my account.
+39,Is there an on-premise version we could buy?
+40,Why did my monthly bill go up by $20?
+41,"Our invoice shows the wrong VAT number, can you reissue it?"
+42,Do you support purchasing through AWS Marketplace?
+43,"After the update, dark mode makes the text unreadable."
+44,We were billed for 12 seats but only have 8 users.
+45,The dashboard takes over a minute to load charts.

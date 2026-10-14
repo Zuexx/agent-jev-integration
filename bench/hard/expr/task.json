@@ -1,0 +1,6 @@
+{
+ "prompt": "Implement calc.Eval exactly as its doc comment specifies (precedence, associativity, unary operators, errors). Add unit tests.",
+ "check": "cp \"$TASK_DIR/testdata/hidden_test.go\" calc/zz_hidden_test.go && go test ./...",
+ "tier": "sonnet",
+ "timeout_s": 600
+}

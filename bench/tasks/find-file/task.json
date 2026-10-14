@@ -1,0 +1,3 @@
+{"prompt": "Which file defines the exported function ComputeChecksum? Write only its path, relative to the current directory, into answer.txt.",
+ "check": "test \"$(sed 's#^\\./##' answer.txt | tr -d '[:space:]')\" = internal/codec/sum.go",
+ "tier": "haiku", "timeout_s": 300}

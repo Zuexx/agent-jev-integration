@@ -1,0 +1,6 @@
+{
+ "prompt": "Implement package cache following every rule in the doc comment of cache.go exactly. Add unit tests that cover the rules.",
+ "check": "cp \"$TASK_DIR/testdata/hidden_test.go\" cache/zz_hidden_test.go && go test ./...",
+ "tier": "sonnet",
+ "timeout_s": 600
+}

@@ -1,0 +1,3 @@
+{"prompt": "On which TCP port does this server listen when started with no flags and no environment variables? Write only the number into port.txt.",
+ "check": "test \"$(tr -d '[:space:]' < port.txt)\" = 8081",
+ "tier": "haiku", "timeout_s": 300}

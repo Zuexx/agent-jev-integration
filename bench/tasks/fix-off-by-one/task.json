@@ -1,0 +1,3 @@
+{"prompt": "go test ./... fails. Fix the bug in the code; do not modify the tests.",
+ "check": "go test ./... && test \"$(shasum -a 256 window/window_test.go | cut -c1-64)\" = 9177f8224550698caf190142420b82a71333660e8d764ae6c8c3d3e387dfc780",
+ "tier": "sonnet", "timeout_s": 400}

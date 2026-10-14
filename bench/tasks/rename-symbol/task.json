@@ -1,0 +1,6 @@
+{
+ "prompt": "Rename the function calc to calculateTotal everywhere in this module (code and tests). It must still build and pass tests.",
+ "check": "go test ./... && ! grep -rqE '(^|[^A-Za-z0-9_])calc\\(' --include='*.go' . && grep -rq 'func calculateTotal' billing",
+ "tier": "haiku",
+ "timeout_s": 300
+}

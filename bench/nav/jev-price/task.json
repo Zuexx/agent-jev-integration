@@ -1,0 +1,11 @@
+{
+ "prompt": "In this Go code base, what price per million input tokens is used to compute Jev's cost? Write only the number into answer.txt.",
+ "check": "test \"$(tr -d '[:space:]' < answer.txt | sed 's/^\\$//')\" = 0.042",
+ "tier": "haiku",
+ "timeout_s": 300,
+ "fixture_from": [
+  "../../../go.mod",
+  "../../../cmd",
+  "../../../internal"
+ ]
+}

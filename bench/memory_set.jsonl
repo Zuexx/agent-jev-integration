@@ -1,0 +1,40 @@
+{"message": "From now on, always write commit messages in English and imperative mood.", "remember": 1}
+{"message": "I prefer table-driven tests in Go; please use that style going forward.", "remember": 1}
+{"message": "Never push directly to main in this repo, always open a PR.", "remember": 1}
+{"message": "This project deploys to Fly.io, not AWS.", "remember": 1}
+{"message": "We use pnpm here, not npm.", "remember": 1}
+{"message": "My name is Zuexx and I'm the only maintainer of this repo.", "remember": 1}
+{"message": "Don't add emojis to any code comments or docs, ever.", "remember": 1}
+{"message": "Our API responses always use snake_case keys.", "remember": 1}
+{"message": "Remember that the staging database is read-only for us.", "remember": 1}
+{"message": "I work in Asia/Taipei timezone, schedule things accordingly.", "remember": 1}
+{"message": "以後回覆我都用繁體中文。", "remember": 1}
+{"message": "這個專案的測試一律用 go test -race 跑。", "remember": 1}
+{"message": "我不喜歡太長的解釋，之後請簡短一點。", "remember": 1}
+{"message": "記住：我們的 CI 用 GitHub Actions，不要再建議 Jenkins。", "remember": 1}
+{"message": "這個 repo 的 Go 版本固定在 1.22，不要升級。", "remember": 1}
+{"message": "Every new endpoint in this service must have an OpenAPI entry.", "remember": 1}
+{"message": "I always want you to ask before deleting files.", "remember": 1}
+{"message": "Prices in this codebase are stored in cents as int64.", "remember": 1}
+{"message": "我們團隊的命名慣例是檔名用 kebab-case。", "remember": 1}
+{"message": "Going forward, put new scripts under tools/ instead of scripts/.", "remember": 1}
+{"message": "Fix the failing test in parser_test.go.", "remember": 0}
+{"message": "What does this regex match?", "remember": 0}
+{"message": "Rename the variable x to count in this function.", "remember": 0}
+{"message": "Run the benchmarks and show me the numbers.", "remember": 0}
+{"message": "Can you explain how the cache eviction works?", "remember": 0}
+{"message": "Use English for this one commit message.", "remember": 0}
+{"message": "Skip the tests this time, I just want to see it compile.", "remember": 0}
+{"message": "Make this function a bit shorter.", "remember": 0}
+{"message": "幫我看一下這個錯誤訊息是什麼意思。", "remember": 0}
+{"message": "把這個檔案的縮排修好。", "remember": 0}
+{"message": "這次先不要改 README。", "remember": 0}
+{"message": "跑一下 go vet 看看有沒有問題。", "remember": 0}
+{"message": "這段程式碼為什麼這麼慢？", "remember": 0}
+{"message": "thanks, looks good", "remember": 0}
+{"message": "Write a unit test for ParseDate.", "remember": 0}
+{"message": "Undo your last change.", "remember": 0}
+{"message": "For this PR only, keep the old function name so the diff stays small.", "remember": 0}
+{"message": "Deploy the preview build now.", "remember": 0}
+{"message": "Summarize what changed in the last three commits.", "remember": 0}
+{"message": "用 sonnet 跑這一題就好。", "remember": 0}

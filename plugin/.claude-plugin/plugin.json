@@ -1,0 +1,6 @@
+{
+  "name": "jevcc",
+  "version": "0.1.0",
+  "description": "Jev (TypeSafe System One) at Claude Code's decision points: per-prompt model/skill routing, bulk classification, semantic lint, checklist review. Needs the jevcc binary on PATH.",
+  "author": { "name": "zuexx" }
+}

@@ -1,0 +1,30 @@
+{"prompt": "which package exports the Decision type?", "tier": "haiku", "skill": "none"}
+{"prompt": "print the contents of .gitignore", "tier": "haiku", "skill": "none"}
+{"prompt": "把這段 log 的時間戳轉成 ISO 8601 格式", "tier": "haiku", "skill": "none"}
+{"prompt": "how many Go files are in internal/?", "tier": "haiku", "skill": "none"}
+{"prompt": "what does `git stash pop` do?", "tier": "haiku", "skill": "none"}
+{"prompt": "change the default port constant from 8080 to 9000", "tier": "haiku", "skill": "none"}
+{"prompt": "目前這個 repo 用的是哪個 license？", "tier": "haiku", "skill": "none"}
+{"prompt": "sort the lines in names.txt alphabetically", "tier": "haiku", "skill": "none"}
+{"prompt": "what's HTTP 429?", "tier": "haiku", "skill": "none"}
+{"prompt": "ok cool, next", "tier": "haiku", "skill": "none"}
+{"prompt": "Send an email to the team announcing the release", "tier": "haiku", "skill": "none"}
+{"prompt": "Add a /healthz endpoint that returns 200 and the build version", "tier": "sonnet", "skill": "none"}
+{"prompt": "Write table-driven tests for ParseScope covering invalid input", "tier": "sonnet", "skill": "tdd|superpowers:test-driven-development"}
+{"prompt": "用測試先行的方式幫我加一個 retry 上限設定", "tier": "sonnet", "skill": "tdd|superpowers:test-driven-development"}
+{"prompt": "The CI job fails only on Windows with 'path not found'; fix it", "tier": "sonnet", "skill": "superpowers:systematic-debugging|diagnosing-bugs"}
+{"prompt": "rebase left conflict markers in three files, sort them out", "tier": "sonnet", "skill": "resolving-merge-conflicts"}
+{"prompt": "Make prettier and type checks run before every commit", "tier": "sonnet", "skill": "setup-pre-commit"}
+{"prompt": "Look over my branch's diff for bugs before I merge", "tier": "sonnet", "skill": "code-review|superpowers:requesting-code-review"}
+{"prompt": "Turn our deployment checklist into a skill Claude can follow", "tier": "sonnet", "skill": "superpowers:writing-skills|writing-for-agents"}
+{"prompt": "Add input validation to the signup form and show inline errors", "tier": "sonnet", "skill": "none"}
+{"prompt": "把 config 載入的邏輯從 main.go 抽成獨立的 package", "tier": "sonnet", "skill": "none"}
+{"prompt": "Prevent Claude from ever running rm -rf or git clean in this repo", "tier": "sonnet", "skill": "git-guardrails-claude-code"}
+{"prompt": "Users report that sessions randomly expire after a few minutes in production; nobody can reproduce it locally", "tier": "opus", "skill": "superpowers:systematic-debugging|diagnosing-bugs"}
+{"prompt": "We need to decide how to version our public API and handle deprecations; let's work it out", "tier": "opus", "skill": "superpowers:brainstorming"}
+{"prompt": "Challenge my plan to rewrite the billing service in Rust — poke every hole", "tier": "opus", "skill": "grilling"}
+{"prompt": "Break the payments revamp into an implementation plan with milestones", "tier": "opus", "skill": "superpowers:writing-plans"}
+{"prompt": "Find authoritative sources on how browsers handle third-party cookie phase-out and summarise them", "tier": "opus", "skill": "research"}
+{"prompt": "我們的訂單、出貨、退貨這些名詞大家用法都不一樣，幫我整理出一致的領域語言", "tier": "opus", "skill": "domain-modeling"}
+{"prompt": "The service layer leaks DB details everywhere; redesign the boundaries so callers don't need to know about SQL", "tier": "opus", "skill": "codebase-design"}
+{"prompt": "Throughput dropped 40% after upgrading the Go runtime; figure out why", "tier": "opus", "skill": "superpowers:systematic-debugging|diagnosing-bugs"}

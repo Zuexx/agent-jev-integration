@@ -1,0 +1,3 @@
+{"prompt": "TestCounter fails intermittently, and `go test -race ./...` reports a problem. Find the root cause and fix it without changing the test.",
+ "check": "go test -race -count=3 ./... && test \"$(shasum -a 256 stats/stats_test.go | cut -c1-64)\" = 53f22464712a8b672c95bceaac62dd5faa2e05d8aafa3a970f26c1f590590e8f",
+ "tier": "opus", "timeout_s": 500}

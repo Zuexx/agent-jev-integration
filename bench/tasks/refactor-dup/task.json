@@ -1,0 +1,3 @@
+{"prompt": "signup.go and invite.go duplicate the email normalisation and validation. Extract it into one function named validEmail in package users and use it from both. Behaviour and tests must not change.",
+ "check": "go test ./... && test \"$(grep -rh 'regexp.MustCompile' users | wc -l | tr -d ' ')\" = 1 && grep -rq 'func validEmail' users && grep -q validEmail users/signup.go && grep -q validEmail users/invite.go && test \"$(shasum -a 256 users/users_test.go | cut -c1-64)\" = 76feb641f8edea1d83d58774efdb1c57b3272b50a85bb897d009b367bddfeff8",
+ "tier": "sonnet", "timeout_s": 400}

@@ -1,0 +1,36 @@
+package review
+
+// DefaultChecklist is asked of every hunk. Each question is phrased so that
+// "yes" means a problem. Override with --checklist file.json.
+var DefaultChecklist = []Item{
+	{"secret_added", "Does the change add a hard-coded secret, token, password or private key?", "high"},
+	{"sensitive_logged", "Does the change log or print secrets, credentials, or personal data?", "high"},
+	{"injection", "Does the change build a SQL query, shell command, file path or HTML from unvalidated input?", "high"},
+	{"auth_weakened", "Does the change remove or weaken an authentication, authorization or permission check?", "high"},
+	{"test_weakened", "Does the change delete a test, loosen an assertion, or skip a test?", "high"},
+	{"error_swallowed", "Does the change ignore, swallow or discard an error that should be handled or reported?", "high"},
+	{"data_loss", "Does the hunk delete or overwrite existing user files or records without first keeping a copy or asking?", "high"},
+	{"race", "Does the change introduce shared state accessed from several goroutines/threads without synchronization?", "high"},
+	{"nil_deref", "Could the change dereference a nil/null/undefined value on some path?", "medium"},
+	{"off_by_one", "Does the change contain a likely off-by-one error in a loop bound, slice or index?", "medium"},
+	{"resource_leak", "Does the change open a file, connection, or lock without closing or releasing it on every path?", "medium"},
+	{"unbounded", "Does the change add a loop, retry, recursion or allocation without a bound or timeout?", "medium"},
+	{"perf_hotpath", "Does the change add an expensive operation (I/O, network, N+1 query, large copy) inside a loop?", "medium"},
+	{"public_api_break", "Does the change alter a public function signature, exported type, API response or config format in a way that breaks existing callers?", "medium"},
+	{"shared_module", "Does the change modify a shared/common utility used by unrelated parts of the code base?", "medium"},
+	{"behavior_untested", "Does the hunk add new behaviour in non-test code while `other_files_in_this_change` contains no test file at all?", "medium"},
+	{"migration_unsafe", "Does the change alter a database schema or stored data format without a migration or backward compatibility?", "medium"},
+	{"timezone_locale", "Does the change handle dates, times, currencies or text encoding in a way that depends on the machine's timezone or locale?", "medium"},
+	{"float_money", "Does the change use floating point for money or exact quantities?", "medium"},
+	{"dependency_added", "Does the change add a new third-party dependency?", "low"},
+	{"debug_left", "Does the change leave debug output, commented-out code, or a temporary hack?", "low"},
+	{"todo_added", "Does the change add a TODO/FIXME instead of finishing the work?", "low"},
+	{"magic_number", "Does the change introduce an unexplained magic number or string?", "low"},
+	{"duplicate_code", "Does the change duplicate logic that already appears elsewhere in the hunk or is obviously a copy?", "low"},
+	{"dead_code", "Does the change add code that can never run or is never used?", "low"},
+	{"naming_unclear", "Does the change introduce a name (function, variable, type) that does not say what it is or does?", "low"},
+	{"comment_wrong", "Does the change add or leave a comment that no longer matches the code next to it?", "low"},
+	{"doc_missing", "Does the change add an exported/public function or type without documentation?", "low"},
+	{"broad_change", "Does the hunk mix unrelated changes (e.g. reformatting together with logic changes)?", "low"},
+	{"config_hardcoded", "Does the change hard-code an environment-specific value (URL, path, host, port) that should be configurable?", "low"},
+}
