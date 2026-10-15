@@ -37,6 +37,8 @@ type Task struct {
 	// "vague" marks the open-direction tasks (category H in the plan).
 	Category string `json:"category,omitempty"`
 	Variant  string `json:"variant,omitempty"`
+	// MCP names the servers (from Runner.MCPServers) the task needs.
+	MCP []string `json:"mcp,omitempty"`
 	// Skills are directories under the task's skills/ that an isolated run
 	// installs into its CLAUDE_CONFIG_DIR, for tasks that need a skill.
 	Skills []string `json:"skills,omitempty"`
@@ -129,6 +131,8 @@ type Run struct {
 	// outside the allow-list (such a run is an error, not a result).
 	ClaudeVersion string `json:"claude_version,omitempty"`
 	Quota         *Quota `json:"quota,omitempty"`
+	// Tools counts the tool calls by name (isolated runs).
+	Tools map[string]int `json:"tools,omitempty"`
 	// Metrics are the check's graded measures (METRIC lines).
 	Metrics    map[string]float64 `json:"metrics,omitempty"`
 	Violations []string           `json:"isolation_violations,omitempty"`
@@ -217,6 +221,8 @@ type Runner struct {
 	Allow   Allow
 	PassEnv []string // added to an isolated run's environment (credentials)
 	SaveDir string   // keeps each isolated run's stream here when set
+	// MCPServers are the MCP server configs tasks can ask for, by name.
+	MCPServers map[string]any
 }
 
 // newWork copies the task's fixture into a fresh directory.
@@ -356,6 +362,19 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 		}
 		args = append(args, "--verbose", "--strict-mcp-config")
 	}
+	if len(t.MCP) > 0 {
+		servers := map[string]any{}
+		for _, name := range t.MCP {
+			cfg, ok := r.MCPServers[name]
+			if !ok {
+				res.Error = "task needs MCP server " + name + ", which is not configured (for blender: set BLENDER)"
+				return res
+			}
+			servers[name] = cfg
+		}
+		b, _ := json.Marshal(map[string]any{"mcpServers": servers})
+		args = append(args, "--mcp-config", string(b))
+	}
 	agents, events := armAdds(args)
 	args = append(args, "--model", res.Model, t.Prompt)
 	cmd := exec.CommandContext(ctx, r.Claude, args...)
@@ -381,6 +400,8 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 		}
 		allow := r.Allow
 		allow.Skills = append(append([]string{}, allow.Skills...), t.Skills...)
+		allow.MCP = append(append([]string{}, allow.MCP...), t.MCP...)
+		res.Tools = toolUses(out)
 		res.Violations = checkIsolation(in, hooks, sb, allow, agents, events)
 		res.Quota = parseQuota(out)
 		out = result

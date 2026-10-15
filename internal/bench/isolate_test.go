@@ -29,7 +29,7 @@ const cleanInit = `{"type":"system","subtype":"init","claude_code_version":"2.1.
 
 func TestCheckIsolation(t *testing.T) {
 	sb := sandbox{Root: "/sb"}
-	allow := Allow{Plugins: []string{"cc-plugin-telemetry"}, Agents: []string{"general-purpose"}, Skills: []string{"init"}}
+	allow := Allow{Plugins: []string{"cc-plugin-telemetry"}, Agents: []string{"general-purpose"}, Skills: []string{"init"}, MCP: []string{"blender"}}
 	clean := cleanInit + "\n" +
 		`{"type":"system","subtype":"hook_started","hook_name":"UserPromptSubmit"}` + "\n" +
 		`{"type":"result","total_cost_usd":0.1,"session_id":"S"}`
@@ -42,11 +42,11 @@ func TestCheckIsolation(t *testing.T) {
 	}
 
 	dirty := `{"type":"system","subtype":"hook_started","hook_name":"SessionStart:startup"}
-{"type":"system","subtype":"init","plugins":[{"name":"superpowers","path":"/p"},{"name":"cc-plugin-telemetry","path":"/elsewhere"}],"mcp_servers":[{"name":"codegraph","status":"connected"}],"agents":["general-purpose","my-agent"],"skills":["init","brainstorming"],"memory_paths":{"auto":"/Users/me/.claude/projects/x/memory/"}}
+{"type":"system","subtype":"init","plugins":[{"name":"superpowers","path":"/p"},{"name":"cc-plugin-telemetry","path":"/elsewhere"}],"mcp_servers":[{"name":"codegraph","status":"connected"},{"name":"blender","status":"failed"}],"agents":["general-purpose","my-agent"],"skills":["init","brainstorming"],"memory_paths":{"auto":"/Users/me/.claude/projects/x/memory/"}}
 {"type":"result"}`
 	in, hooks, _ = parseStream([]byte(dirty))
 	v := strings.Join(checkIsolation(in, hooks, sb, allow, nil, []string{"UserPromptSubmit"}), "\n")
-	for _, want := range []string{"plugin superpowers", "plugin cc-plugin-telemetry", "mcp server codegraph", "agent my-agent", "skill brainstorming", "hook SessionStart:startup", "memory path /Users/me"} {
+	for _, want := range []string{"plugin superpowers", "plugin cc-plugin-telemetry", "mcp server codegraph", "mcp server blender is failed", "agent my-agent", "skill brainstorming", "hook SessionStart:startup", "memory path /Users/me"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q in\n%s", want, v)
 		}
@@ -152,5 +152,15 @@ echo '{"type":"result","total_cost_usd":0.1,"session_id":"S","is_error":false}'
 	res := r.Do(context.Background(), task, ArmOff, 1)
 	if res.Error != "" || !res.Pass {
 		t.Fatalf("%+v", res)
+	}
+}
+
+func TestToolUses(t *testing.T) {
+	out := `{"type":"assistant","message":{"content":[{"type":"text"},{"type":"tool_use","name":"mcp__blender__render"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Agent"},{"type":"tool_use","name":"mcp__blender__render"}]}}
+{"type":"user","message":{"content":[{"type":"tool_result"}]}}`
+	n := toolUses([]byte(out))
+	if n["mcp__blender__render"] != 2 || n["Agent"] != 1 || len(n) != 2 {
+		t.Fatal(n)
 	}
 }

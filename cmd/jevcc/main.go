@@ -20,6 +20,7 @@ import (
 
 	"github.com/zuexx/agent-jev-integration/internal/audit"
 	"github.com/zuexx/agent-jev-integration/internal/bench"
+	"github.com/zuexx/agent-jev-integration/internal/blendermcp"
 	"github.com/zuexx/agent-jev-integration/internal/cite"
 	"github.com/zuexx/agent-jev-integration/internal/classify"
 	"github.com/zuexx/agent-jev-integration/internal/config"
@@ -104,6 +105,7 @@ func realMain(args []string) int {
 		"memeval":      cmdMemEval,
 		"injeval":      cmdInjEval,
 		"cite":         cmdCite,
+		"blender-mcp":  cmdBlenderMCP,
 	}
 	f, ok := cmds[args[0]]
 	if !ok {
@@ -722,8 +724,12 @@ func cmdBench(args []string) int {
 			return fail(fmt.Errorf("%w (create it with --probe-allow)", err))
 		}
 	}
+	mcp := map[string]any{}
+	if b := os.Getenv("BLENDER"); b != "" {
+		mcp["blender"] = map[string]any{"type": "stdio", "command": self, "args": []string{"blender-mcp"}, "env": map[string]string{"BLENDER": b}}
+	}
 	r := &bench.Runner{
-		Isolate: *isolate, Allow: allow, PassEnv: passEnv,
+		Isolate: *isolate, Allow: allow, PassEnv: passEnv, MCPServers: mcp,
 		Claude: claude, MainModel: *model, HookCmd: install.HookCommand(self), Agents: install.AgentsJSON(), MaxUSD: *maxUSD,
 		Pick: func(ctx context.Context, prompt string) (string, float64, error) {
 			d, err := decide(ctx, cfg, prompt, nil)
@@ -1321,6 +1327,20 @@ func cmdCite(args []string) int {
 	fmt.Printf("\nverified %d · contradicted %d · unsupported %d · fabricated %d · needs review %d\n", counts[cite.Verified], counts[cite.Contradicted], counts[cite.Unsupported], counts[cite.Fabricated], counts[cite.Review])
 	if scored > 0 {
 		fmt.Printf("matches the expected verdict: %d/%d\n", right, scored)
+	}
+	return 0
+}
+
+// cmdBlenderMCP serves the bench's Blender tools over stdio MCP; the scene is
+// scene.blend in the current directory.
+func cmdBlenderMCP(args []string) int {
+	bin := os.Getenv("BLENDER")
+	if bin == "" {
+		return fail(errors.New("set BLENDER to the Blender binary"))
+	}
+	e := blendermcp.Exec{Path: bin, Scene: "scene.blend"}
+	if err := blendermcp.Serve(context.Background(), os.Stdin, os.Stdout, e); err != nil {
+		return fail(err)
 	}
 	return 0
 }

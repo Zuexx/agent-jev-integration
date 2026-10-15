@@ -94,6 +94,11 @@ func (n *named) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+type mcpServer struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}
+
 type plugin struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
@@ -104,7 +109,7 @@ type Init struct {
 	Version     string            `json:"claude_code_version"`
 	Model       string            `json:"model"`
 	Plugins     []plugin          `json:"plugins"`
-	MCPServers  []named           `json:"mcp_servers"`
+	MCPServers  []mcpServer       `json:"mcp_servers"`
 	Agents      []named           `json:"agents"`
 	Skills      []named           `json:"skills"`
 	MemoryPaths map[string]string `json:"memory_paths"`
@@ -139,6 +144,32 @@ func parseQuota(out []byte) *Quota {
 		q = &Quota{five.Utilization, seven.Utilization, five.ResetsAt, seven.ResetsAt}
 	}
 	return q
+}
+
+// toolUses counts the tools the session called, by name (Agent/Task calls
+// are delegations; mcp__<server>__<tool> are MCP calls).
+func toolUses(out []byte) map[string]int {
+	n := map[string]int{}
+	for _, line := range bytes.Split(out, []byte("\n")) {
+		var e struct {
+			Type    string `json:"type"`
+			Message struct {
+				Content []struct {
+					Type string `json:"type"`
+					Name string `json:"name"`
+				} `json:"content"`
+			} `json:"message"`
+		}
+		if json.Unmarshal(line, &e) != nil || e.Type != "assistant" {
+			continue
+		}
+		for _, c := range e.Message.Content {
+			if c.Type == "tool_use" {
+				n[c.Name]++
+			}
+		}
+	}
+	return n
 }
 
 // parseStream splits stream-json output into the init event, the names of
@@ -192,8 +223,11 @@ func checkIsolation(in *Init, hooks []string, sb sandbox, allow Allow, agents, e
 		}
 	}
 	for _, m := range in.MCPServers {
-		if !has(allow.MCP, string(m)) {
-			v = append(v, fmt.Sprintf("mcp server %s", m))
+		switch {
+		case !has(allow.MCP, m.Name):
+			v = append(v, fmt.Sprintf("mcp server %s", m.Name))
+		case m.Status != "" && m.Status != "connected":
+			v = append(v, fmt.Sprintf("mcp server %s is %s", m.Name, m.Status))
 		}
 	}
 	for _, a := range in.Agents {
