@@ -71,6 +71,7 @@ echo "$@" > args.txt
 echo "$HOME|$CLAUDE_CONFIG_DIR|$JEVCC_HOME|$CLAUDE_CODE_OAUTH_TOKEN" > env.txt
 touch "$HOME/written"
 echo '{"type":"system","subtype":"init","claude_code_version":"9.9","plugins":[],"mcp_servers":[],"agents":[],"skills":[],"memory_paths":{"auto":"'"$HOME"'/m"}}'
+echo '{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"five_hour":{"utilization":3,"resetsAt":100},"seven_day":{"utilization":12,"resetsAt":200}}}}'
 echo '{"type":"result","total_cost_usd":0.25,"num_turns":2,"session_id":"S1","is_error":false,"modelUsage":{"claude-haiku-5-5":{"inputTokens":4,"outputTokens":1,"costUSD":0.25}}}'
 `), 0o755)
 	var jevHome string
@@ -82,6 +83,9 @@ echo '{"type":"result","total_cost_usd":0.25,"num_turns":2,"session_id":"S1","is
 	res := r.Do(context.Background(), task, ArmHook, 1)
 	if res.Error != "" || !res.Pass || res.ClaudeUSD != 0.25 || res.SessionID != "S1" || res.ClaudeVersion != "9.9" {
 		t.Fatalf("%+v", res)
+	}
+	if q := res.Quota; q == nil || q.FiveHour != 3 || q.SevenDay != 12 || q.SevenDayReset != 200 {
+		t.Fatalf("quota %+v", res.Quota)
 	}
 	if res.JevUSD != 0.01 || jevHome == "" {
 		t.Fatal("jev cost not read from the sandbox", res.JevUSD, jevHome)

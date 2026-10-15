@@ -109,6 +109,37 @@ type Init struct {
 	MemoryPaths map[string]string `json:"memory_paths"`
 }
 
+// Quota is the subscription usage Claude Code reported during a run (the
+// last rate_limit_event): utilization of the 5-hour and 7-day windows and
+// when each resets (unix seconds).
+type Quota struct {
+	FiveHour      float64 `json:"five_hour"`
+	SevenDay      float64 `json:"seven_day"`
+	FiveHourReset int64   `json:"five_hour_reset"`
+	SevenDayReset int64   `json:"seven_day_reset"`
+}
+
+func parseQuota(out []byte) *Quota {
+	var q *Quota
+	for _, line := range bytes.Split(out, []byte("\n")) {
+		var e struct {
+			Type string `json:"type"`
+			Info struct {
+				Windows map[string]struct {
+					Utilization float64 `json:"utilization"`
+					ResetsAt    int64   `json:"resetsAt"`
+				} `json:"unifiedWindows"`
+			} `json:"rate_limit_info"`
+		}
+		if json.Unmarshal(line, &e) != nil || e.Type != "rate_limit_event" || len(e.Info.Windows) == 0 {
+			continue
+		}
+		five, seven := e.Info.Windows["five_hour"], e.Info.Windows["seven_day"]
+		q = &Quota{five.Utilization, seven.Utilization, five.ResetsAt, seven.ResetsAt}
+	}
+	return q
+}
+
 // parseStream splits stream-json output into the init event, the names of
 // the hooks that started, and the final result line.
 func parseStream(out []byte) (*Init, []string, []byte) {
@@ -208,6 +239,15 @@ func (r *Runner) ProbeAllow(ctx context.Context) (Allow, []string, error) {
 	in, hooks, result := parseStream(out)
 	if in == nil {
 		return Allow{}, nil, fmt.Errorf("no init event (claude: %v) %s", err, tail(string(result), 300))
+	}
+	// Signed-out sessions load fewer skills, so a failed login would give a
+	// wrong allow-list.
+	var res struct {
+		IsError bool   `json:"is_error"`
+		Result  string `json:"result"`
+	}
+	if json.Unmarshal(result, &res) != nil || res.IsError {
+		return Allow{}, nil, fmt.Errorf("probe session failed: %s", tail(res.Result, 300))
 	}
 	var a Allow
 	for _, p := range in.Plugins {

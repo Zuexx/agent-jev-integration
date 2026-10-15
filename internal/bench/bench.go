@@ -116,6 +116,7 @@ type Run struct {
 	// Isolated runs only: what Claude Code reported loading, and anything
 	// outside the allow-list (such a run is an error, not a result).
 	ClaudeVersion string   `json:"claude_version,omitempty"`
+	Quota         *Quota   `json:"quota,omitempty"`
 	Violations    []string `json:"isolation_violations,omitempty"`
 }
 
@@ -310,6 +311,7 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 			res.ClaudeVersion = in.Version
 		}
 		res.Violations = checkIsolation(in, hooks, sb, r.Allow, agents, events)
+		res.Quota = parseQuota(out)
 		out = result
 	}
 	var cr struct {
