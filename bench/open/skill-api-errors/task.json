@@ -1,0 +1,8 @@
+{
+ "category": "skill",
+ "prompt": "Add an endpoint GET /v1/notes/{id} that returns one note. It should answer 404 when the note does not exist and 400 when the id is not a number.",
+ "check": "cp \"$TASK_DIR/hidden_test.go\" internal/api/zz_hidden_test.go && go test ./... && ! grep -rn 'http.Error(' internal/api --include='*.go'",
+ "skills": ["api-conventions"],
+ "tier": "sonnet",
+ "timeout_s": 400
+}
