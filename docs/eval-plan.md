@@ -267,7 +267,7 @@ Claude Code 版本、各模型 ID、jevcc commit、Jev 版本、Blender／Node�
     skill-api-errors）、Blender 3（blender-product-shot、blender-fix-black、blender-hero〔方向不明確〕）、影片 2（video-intro、
     video-vague〔方向不明確〕）；加上原有的程式題（易 10、難 5）。
   - 3.3 新增 `jevcc bench --validate`：每題自動驗證「原始 fixture 失敗、套上 testdata/solution 通過」；新題與難題皆雙向通過，
-    易題暫無參考解，只驗證 fixture 一側。
+    易題也已補上參考解；全部 28 題皆雙向通過。
   - 4.1 推理強度定為 `--effort medium`（Claude Code 一般預設），評審用 `high`。原計畫寫「登記時寫定」但漏寫，於此補定。
   - 4.1 不上網：已停用 WebSearch、WebFetch；Bash 仍可連網（無法在不改系統設定下封鎖），列入已知限制。
     帳號層級的 `remote-settings.json`、`policy-limits.json` 會被下載，無法隔離，記入環境清單。
