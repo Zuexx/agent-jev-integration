@@ -50,3 +50,20 @@
   - 題目要夠多元：除了程式題，也要有 MCP 操作（ComfyUI）、導演或設計類、規劃類。凡是 opus 能主導的工作，都要拿其他模型主導來比。
   - 工具限制（現狀）和工具全開兩種情境的成本都要列出比較（對應 D3）。
 - 結果出來後回頭更新 D2、D3。
+
+## D5 — MCP 操作類題目用 Blender，不用 ComfyUI 或 Godot
+
+- 日期：2026-10-15　狀態：**已決定**
+- 內容：評測中「用 MCP 操作創作工具」這類題目改用 Blender 4.5 LTS（headless `blender -b --python`），MCP 由本專案自己寫的薄 server 提供。
+- 理由：開發機（Intel Mac、無獨立 GPU）跑不了 ComfyUI；Blender 免費跨平台，別人容易重現；成品可用 bpy 確定性檢查。
+  Godot 的主要工作是寫 GDScript，接近程式題，量不到「操作工具做出視覺成品」。Intel Mac 只能用到 4.5 LTS（官方：5.0 起只支援 Apple Silicon）。
+- 出處：使用者同意以 brew 安裝（`/Applications/Blender.app`，4.5.14 LTS）；評測計畫 `docs/eval-plan.md` 3.4。
+
+## D6 — 評測一律在隔離環境執行；舊的 bench 數字不可當作公開依據
+
+- 日期：2026-10-15　狀態：**已決定**
+- 內容：每次評測執行用暫存的 `CLAUDE_CONFIG_DIR` 與 `JEVCC_HOME`，並檢查 init 事件確認沒有載入清單以外的東西。
+- 理由：舊 bench 沿用作者的 `~/.claude`；實測一句 `reply ok` 就載入 3 個 SessionStart hook、7 個 plugin、5 個 MCP server、79 個 skill。
+  另外舊的 10 題 opus 與 haiku 都 100% 通過，README 的「省 97%」量自沒有鑑別力的題目。
+- 後續：新評測完成後更新 README 的數字與說明（待使用者確認改法）。
+- 出處：`docs/eval-plan.md` 第 0 節。
