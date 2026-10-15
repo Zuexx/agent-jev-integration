@@ -34,20 +34,23 @@ func Append(kind string, v any, keepDays int, now time.Time) error {
 
 // Files lists the files of kind, oldest first. The single file that older
 // versions wrote (kind.jsonl) comes first if it exists; it is never pruned.
-func Files(kind string) []string {
+func Files(kind string) []string { return FilesIn(paths.StateDir(), kind) }
+
+// FilesIn is Files for another state directory (an isolated bench run's).
+func FilesIn(dir, kind string) []string {
 	var out []string
-	legacy := filepath.Join(paths.StateDir(), kind+".jsonl")
+	legacy := filepath.Join(dir, kind+".jsonl")
 	if _, err := os.Stat(legacy); err == nil {
 		out = append(out, legacy)
 	}
-	daily := dailyFiles(kind)
+	daily := dailyFiles(dir, kind)
 	return append(out, daily...)
 }
 
 // dailyFiles returns the dated files of kind, oldest first. The date layout
 // sorts lexically, so no parsing is needed for the order.
-func dailyFiles(kind string) []string {
-	matches, _ := filepath.Glob(filepath.Join(paths.StateDir(), kind+"-*.jsonl"))
+func dailyFiles(dir, kind string) []string {
+	matches, _ := filepath.Glob(filepath.Join(dir, kind+"-*.jsonl"))
 	sort.Strings(matches)
 	return matches
 }
@@ -61,7 +64,7 @@ func prune(kind string, keepDays int, now time.Time) {
 	}
 	oldest := now.AddDate(0, 0, -(keepDays - 1)).Format(dayLayout)
 	prefix := kind + "-"
-	for _, f := range dailyFiles(kind) {
+	for _, f := range dailyFiles(paths.StateDir(), kind) {
 		name := filepath.Base(f)
 		day := strings.TrimSuffix(strings.TrimPrefix(name, prefix), ".jsonl")
 		if day < oldest {

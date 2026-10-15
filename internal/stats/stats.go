@@ -61,9 +61,16 @@ func Append(r Record, keepDays int) error {
 }
 
 // LoadDecisions reads every decisions file that is kept, oldest first.
-func LoadDecisions() ([]Record, error) {
+func LoadDecisions() ([]Record, error) { return loadDecisions(journal.Files("decisions")) }
+
+// LoadDecisionsIn reads the decisions logs of another state directory.
+func LoadDecisionsIn(dir string) ([]Record, error) {
+	return loadDecisions(journal.FilesIn(dir, "decisions"))
+}
+
+func loadDecisions(files []string) ([]Record, error) {
 	var out []Record
-	for _, f := range journal.Files("decisions") {
+	for _, f := range files {
 		recs, err := Load(f)
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return out, err

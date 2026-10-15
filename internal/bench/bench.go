@@ -64,6 +64,30 @@ func without(args []string, flag string) []string {
 	return out
 }
 
+// armAdds reads back the agents (--agents) and hook events (--settings) an
+// arm put on the command line, which an isolated run is allowed to load.
+func armAdds(args []string) (agents, events []string) {
+	for i := 0; i+1 < len(args); i++ {
+		switch args[i] {
+		case "--agents":
+			var m map[string]any
+			json.Unmarshal([]byte(args[i+1]), &m)
+			for k := range m {
+				agents = append(agents, k)
+			}
+		case "--settings":
+			var s struct {
+				Hooks map[string]any `json:"hooks"`
+			}
+			json.Unmarshal([]byte(args[i+1]), &s)
+			for k := range s.Hooks {
+				events = append(events, k)
+			}
+		}
+	}
+	return agents, events
+}
+
 func hookSettings(cmd string, events ...string) string {
 	h := map[string]any{}
 	for _, ev := range events {
@@ -89,6 +113,10 @@ type Run struct {
 	Tokens    int                `json:"tokens"`
 	SessionID string             `json:"session_id"`
 	Error     string             `json:"error,omitempty"`
+	// Isolated runs only: what Claude Code reported loading, and anything
+	// outside the allow-list (such a run is an error, not a result).
+	ClaudeVersion string   `json:"claude_version,omitempty"`
+	Violations    []string `json:"isolation_violations,omitempty"`
 }
 
 func (r Run) TotalUSD() float64 { return r.ClaudeUSD + r.JevUSD }
@@ -157,8 +185,15 @@ type Runner struct {
 	MaxUSD    float64
 	// Pick returns the model for the route arm and Jev's cost for that decision.
 	Pick func(ctx context.Context, prompt string) (model string, jevUSD float64, err error)
-	// JevCost sums the hook's Jev cost for a session (from the decisions logs).
-	JevCost func(sessionID string) float64
+	// JevCost sums the hook's Jev cost for a session from the decisions logs
+	// in jevHome ("" = the evaluator's own state directory).
+	JevCost func(sessionID, jevHome string) float64
+	// Isolate runs claude in a throwaway HOME / CLAUDE_CONFIG_DIR / JEVCC_HOME
+	// with stream-json output, and checks its init event against Allow.
+	Isolate bool
+	Allow   Allow
+	PassEnv []string // added to an isolated run's environment (credentials)
+	SaveDir string   // keeps each isolated run's stream here when set
 }
 
 func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
@@ -235,10 +270,27 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 		}
 		res.Model, res.JevUSD = m, usd
 	}
+	base := os.Environ()
+	var sb sandbox
+	if r.Isolate {
+		if sb, err = newSandbox(); err != nil {
+			res.Error = err.Error()
+			return res
+		}
+		defer os.RemoveAll(sb.Root)
+		base = sb.env(base, r.PassEnv)
+		for i := range args {
+			if args[i] == "--output-format" {
+				args[i+1] = "stream-json"
+			}
+		}
+		args = append(args, "--verbose", "--strict-mcp-config")
+	}
+	agents, events := armAdds(args)
 	args = append(args, "--model", res.Model, t.Prompt)
 	cmd := exec.CommandContext(ctx, r.Claude, args...)
 	cmd.Dir = work
-	cmd.Env = append(os.Environ(), "JEVCC_MODE="+mode)
+	cmd.Env = append(base, "JEVCC_MODE="+mode)
 	if delegate != "" {
 		cmd.Env = append(cmd.Env, "JEVCC_DELEGATE="+delegate)
 	}
@@ -248,6 +300,18 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 	start := time.Now()
 	out, err := cmd.Output()
 	res.DurMS = time.Since(start).Milliseconds()
+	if r.Isolate {
+		if r.SaveDir != "" {
+			name := fmt.Sprintf("%s_%s_%d_%d.jsonl", t.Name, arm, rep, time.Now().UnixNano())
+			os.WriteFile(filepath.Join(r.SaveDir, name), out, 0o600)
+		}
+		in, hooks, result := parseStream(out)
+		if in != nil {
+			res.ClaudeVersion = in.Version
+		}
+		res.Violations = checkIsolation(in, hooks, sb, r.Allow, agents, events)
+		out = result
+	}
 	var cr struct {
 		Cost       float64 `json:"total_cost_usd"`
 		DurationMS int64   `json:"duration_ms"`
@@ -266,6 +330,9 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 	if cr.IsError {
 		res.Error = "claude: " + cr.Subtype
 	}
+	if len(res.Violations) > 0 {
+		res.Error = "isolation: " + strings.Join(res.Violations, "; ")
+	}
 	res.ClaudeUSD, res.Turns, res.SessionID, res.Subagents = cr.Cost, cr.Turns, cr.SessionID, cr.Subagents.Spawned
 	res.ModelUSD = map[string]float64{}
 	var raw struct {
@@ -280,7 +347,7 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 		}
 	}
 	if mode == "on" && r.JevCost != nil {
-		res.JevUSD = r.JevCost(cr.SessionID)
+		res.JevUSD = r.JevCost(cr.SessionID, sb.JevHome)
 	}
 	check := exec.CommandContext(ctx, "sh", "-c", t.Check)
 	check.Dir = work

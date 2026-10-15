@@ -615,6 +615,10 @@ func cmdBench(args []string) int {
 	maxUSD := fset.Float64("max-usd", 2, "per-run --max-budget-usd for claude (0 = none)")
 	seed := fset.Int64("seed", 1, "run order seed")
 	dry := fset.Bool("dry-run", false, "list the planned runs and exit")
+	isolate := fset.Bool("isolate", true, "run each claude in a throwaway HOME / CLAUDE_CONFIG_DIR / JEVCC_HOME (docs/eval-plan.md 4.1)")
+	tokenFile := fset.String("token-file", "", "file holding a `claude setup-token` token for isolated runs (else $CLAUDE_CODE_OAUTH_TOKEN)")
+	allowPath := fset.String("allow", "bench/isolation-allow.json", "agents and skills a clean Claude Code loads by itself")
+	probe := fset.Bool("probe-allow", false, "run one clean isolated session and write what it loads to --allow, then exit")
 	if err := fset.Parse(args); err != nil {
 		return 2
 	}
@@ -647,7 +651,52 @@ func cmdBench(args []string) int {
 	if err != nil {
 		return fail(err)
 	}
+	var passEnv []string
+	var allow bench.Allow
+	if *isolate || *probe {
+		token := os.Getenv("CLAUDE_CODE_OAUTH_TOKEN")
+		if *tokenFile != "" {
+			b, err := os.ReadFile(*tokenFile)
+			if err != nil {
+				return fail(err)
+			}
+			token = strings.TrimSpace(string(b))
+		}
+		if token == "" {
+			return fail(errors.New("isolated runs cannot use your login: pass --token-file (see `claude setup-token`) or set CLAUDE_CODE_OAUTH_TOKEN"))
+		}
+		passEnv = append(passEnv, "CLAUDE_CODE_OAUTH_TOKEN="+token)
+		// The hook inside the sandbox has no config file; give it the key.
+		if cfg.APIKey != "" {
+			passEnv = append(passEnv, "TYPESAFE_API_KEY="+cfg.APIKey)
+		}
+		if v := os.Getenv("TYPESAFE_ENDPOINT"); v != "" {
+			passEnv = append(passEnv, "TYPESAFE_ENDPOINT="+v)
+		}
+	}
+	if *probe {
+		pr := &bench.Runner{Claude: claude, PassEnv: passEnv}
+		a, violations, err := pr.ProbeAllow(context.Background())
+		if err != nil {
+			return fail(err)
+		}
+		if len(violations) > 0 {
+			return fail(fmt.Errorf("the clean session is not clean: %s", strings.Join(violations, "; ")))
+		}
+		b, _ := json.MarshalIndent(a, "", "  ")
+		if err := os.WriteFile(*allowPath, append(b, '\n'), 0o644); err != nil {
+			return fail(err)
+		}
+		fmt.Printf("wrote %s: %d agents, %d skills; review it before committing\n", *allowPath, len(a.Agents), len(a.Skills))
+		return 0
+	}
+	if *isolate {
+		if allow, err = bench.LoadAllow(*allowPath); err != nil {
+			return fail(fmt.Errorf("%w (create it with --probe-allow)", err))
+		}
+	}
 	r := &bench.Runner{
+		Isolate: *isolate, Allow: allow, PassEnv: passEnv,
 		Claude: claude, MainModel: *model, HookCmd: install.HookCommand(self), Agents: install.AgentsJSON(), MaxUSD: *maxUSD,
 		Pick: func(ctx context.Context, prompt string) (string, float64, error) {
 			d, err := decide(ctx, cfg, prompt, nil)
@@ -659,8 +708,11 @@ func cmdBench(args []string) int {
 			}
 			return d.Tier, d.CostUSD, nil
 		},
-		JevCost: func(session string) float64 {
+		JevCost: func(session, jevHome string) float64 {
 			recs, _ := stats.LoadDecisions()
+			if jevHome != "" {
+				recs, _ = stats.LoadDecisionsIn(jevHome)
+			}
 			sum := 0.0
 			for _, rec := range recs {
 				if rec.SessionID == session && rec.Decision != nil {
@@ -673,6 +725,10 @@ func cmdBench(args []string) int {
 	stamp := time.Now().Format("20060102-150405")
 	os.MkdirAll(*outDir, 0o755)
 	rawPath := filepath.Join(*outDir, "bench-"+stamp+".jsonl")
+	if *isolate {
+		r.SaveDir = filepath.Join(*outDir, "bench-"+stamp+"-streams")
+		os.MkdirAll(r.SaveDir, 0o755)
+	}
 	var runs []bench.Run
 	for i, j := range jobs {
 		fmt.Fprintf(os.Stderr, "[%d/%d] %s %s #%d … ", i+1, len(jobs), j.Task.Name, j.Arm, j.Rep)
