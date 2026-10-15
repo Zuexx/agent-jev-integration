@@ -36,7 +36,10 @@
   `mcpServers` 欄位對 plugin subagent 無效；`AskUserQuestion` 會被平台從所有 subagent 移除，
   「不能問使用者」只能靠 prompt 要它把問題寫進報告。拿掉 `tools` 時要一併改 `install.AgentsJSON()`，
   否則會送出 `"tools": [""]`。怎麼改還沒定，見 `docs/decisions.md` 的 D3。
-- Stop review 只在改了程式碼時才跑（`not_code` 跳過）。影片、文件等非程式碼產出沒有人驗收。
+- Stop review 的觸發條件是「這一回合用了 Write/Edit/MultiEdit/NotebookEdit」（`verify.Turn.EditedCode`，名稱有誤導），
+  不看檔案類型：markdown 計畫、Remotion 的 .tsx 也會被審查（試跑中 jev-review 曾以 6 次 Edit 重寫 haiku 的計畫）。
+  反過來，只經由 Bash 或 MCP 產出的成品（Blender 場景與渲染、指令產生的檔案）不會被審查。
+  2026-10-15 更正；評測期間不改這個行為，以免評測對象變動。
 
 ### 改進點子（未做，待討論）
 
