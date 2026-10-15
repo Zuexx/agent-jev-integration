@@ -108,6 +108,7 @@ func realMain(args []string) int {
 		"blender-mcp":  cmdBlenderMCP,
 		"judge":        cmdJudge,
 		"rate":         cmdRate,
+		"report":       cmdReport,
 	}
 	f, ok := cmds[args[0]]
 	if !ok {
@@ -1554,5 +1555,73 @@ func cmdRate(args []string) int {
 		return fail(err)
 	}
 	fmt.Printf("%d outputs; open %s (the key is in rate-key.json; do not open it before rating)\n", len(sample), filepath.Join(dir, "rate.html"))
+	return 0
+}
+
+// cmdReport writes the evaluation report (docs/eval-plan.md 6) from a bench
+// results file, its judge verdicts and, when given, the human ratings.
+func cmdReport(args []string) int {
+	fset := flag.NewFlagSet("report", flag.ContinueOnError)
+	runsPath := fset.String("runs", "", "bench-*.jsonl")
+	tasksDir := fset.String("tasks", "bench/tasks,bench/hard,bench/open", "comma-separated task directories")
+	ratingsPath := fset.String("ratings", "", "ratings.json exported from rate.html (its key is rate-key.json next to the runs)")
+	if err := fset.Parse(args); err != nil || *runsPath == "" {
+		fmt.Fprintln(os.Stderr, "usage: jevcc report --runs bench-*.jsonl [--ratings ratings.json]")
+		return 2
+	}
+	runs, err := bench.LoadRuns(*runsPath)
+	if err != nil {
+		return fail(err)
+	}
+	tasks := map[string]bench.Task{}
+	for _, d := range strings.Split(*tasksDir, ",") {
+		ts, _ := bench.LoadTasks(d, nil)
+		for _, t := range ts {
+			tasks[t.Name] = t
+		}
+	}
+	dir := filepath.Dir(*runsPath)
+	var verdicts []bench.Verdict
+	if b, err := os.ReadFile(filepath.Join(dir, "judge-"+filepath.Base(*runsPath))); err == nil {
+		for _, line := range strings.Split(string(b), "\n") {
+			var v bench.Verdict
+			if json.Unmarshal([]byte(line), &v) == nil && v.Task != "" {
+				verdicts = append(verdicts, v)
+			}
+		}
+	}
+	var ratings []bench.Rating
+	if *ratingsPath != "" {
+		var key []bench.RateKeyEntry
+		kb, err := os.ReadFile(filepath.Join(dir, "rate-key.json"))
+		if err != nil {
+			return fail(err)
+		}
+		if err := json.Unmarshal(kb, &key); err != nil {
+			return fail(err)
+		}
+		var scores map[string]struct {
+			Score int `json:"score"`
+		}
+		rb, err := os.ReadFile(*ratingsPath)
+		if err != nil {
+			return fail(err)
+		}
+		if err := json.Unmarshal(rb, &scores); err != nil {
+			return fail(err)
+		}
+		for _, k := range key {
+			if s, ok := scores[k.ID]; ok && s.Score > 0 {
+				ratings = append(ratings, bench.Rating{Task: k.Task, Arm: k.Arm, Rep: k.Rep, Score: s.Score})
+			}
+		}
+	}
+	md := bench.FullReport(bench.ReportInput{Runs: runs, Tasks: tasks, Verdicts: verdicts, Ratings: ratings})
+	out := filepath.Join(dir, "report-"+strings.TrimSuffix(filepath.Base(*runsPath), ".jsonl")+".md")
+	if err := os.WriteFile(out, []byte(md), 0o644); err != nil {
+		return fail(err)
+	}
+	fmt.Println(md)
+	fmt.Fprintln(os.Stderr, "wrote", out)
 	return 0
 }
