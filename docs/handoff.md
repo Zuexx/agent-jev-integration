@@ -1,6 +1,7 @@
 # 交接紀錄
 
 給下一個接手的 session（人或 agent）。依日期往下加，修掉或作廢的項目直接刪。
+這裡只放「現在」的狀態；決定和討論的完整經過記在 `docs/decisions.md`（只增不刪，可追溯）。
 
 ## 2026-10-14
 
@@ -32,14 +33,20 @@
 - 用 `/model` 切換後的第一句，hook 從 transcript 讀到的仍是舊模型（`internal/hook/hook.go` 的 `lastModel`），
   會給出錯誤的升級建議（例如主對話已是 opus，卻叫它派 jev-opus）。
 - `jev-*` subagent 的 `tools` 寫死為 `Read, Grep, Glob, Bash, Edit, Write`（`internal/install/agents/`）：
-  拿不到 MCP 工具，也不能問使用者。升級去做 MCP 工作反而做不了。
+  拿不到 MCP 工具，也不能用 skill（清單裡沒有 `Skill`）。升級去做 MCP 工作反而做不了。
+  已查證（2026-10-15，官方 sub-agents 文件）：拿掉 `tools` 就繼承主對話全部工具，含 MCP 與 `Skill`；
+  `mcpServers` 欄位對 plugin subagent 無效；`AskUserQuestion` 會被平台從所有 subagent 移除，
+  「不能問使用者」只能靠 prompt 要它把問題寫進報告。拿掉 `tools` 時要一併改 `install.AgentsJSON()`，
+  否則會送出 `"tools": [""]`。怎麼改還沒定，見 `docs/decisions.md` 的 D3。
 - Stop review 只在改了程式碼時才跑（`not_code` 跳過）。影片、文件等非程式碼產出沒有人驗收。
 
 ### 改進點子（未做，待討論）
 
 - 對話層級判斷：session 開頭（或每隔幾句）問 Jev「這是不是開放式、要邊做邊判斷的工作」，是就提示使用者切 `/model`，而不是派 subagent。
 - 非程式碼回合的驗收：產出檔案（影片、文件）時也讓強模型看一下成品。
-- bench 補開放式任務，量出 haiku 主導在這類工作差多少。
+- 重新評測主導模型：同一批任務（程式題和開放式任務都要有）分別由 opus、sonnet、haiku 主導，搭配 Jev，
+  比較成品品質和總成本。用結果決定哪類工作該由哪個模型主導，也檢查「往下派工」預設關閉是否合理
+  （`+14%` 只剩 `hook.go` 的說明字串可查，而 bench 的任務都是可用測試檢查的題目）。下一步就做這個，方向與要求待和使用者討論。
 
 ### 工作習慣
 
