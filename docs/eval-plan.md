@@ -299,3 +299,6 @@ Q3 → 往下派工是否預設開啟；Q4 → D3（`jev-*` 的工具設定）�
 - 2026-10-15：**試跑發現的檢查錯誤（修正於正式執行前）**：research-outage 只說「寫 findings.md」，haiku 寫在
   `incident/findings.md`、內容正確卻被判失敗。題目沒指定位置，屬檢查過嚴；只給檔名的四題（research-outage、research-mq、
   plan-ci-migration、plan-onboarding）改為在工作目錄任何位置找該檔。判定內容的條件不變。
+- 2026-10-15：**影片檢查修正（試跑發現，修正於正式執行前）**：ffmpeg 的場景切換偵測只抓得到硬切，模型做的淡入淡出與
+  「同背景換文字」都算 0 次，把 opus 與 haiku 的正常影片都判失敗；改成「10 個取樣畫面中明顯不同的畫面數」
+  （video-intro ≥ 4、video-vague ≥ 2）。黑畫面門檻原本把深色背景（終端機風格）也當黑畫面，改為接近純黑才算。
