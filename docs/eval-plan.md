@@ -252,6 +252,8 @@ Claude Code 版本、各模型 ID、jevcc commit、Jev 版本、Blender／Node�
 - 開發機是 Intel Mac，渲染與 Remotion 的時間比一般機器長，時間指標僅供同一台機器內比較。
 - Jev 的判斷不是每次都一樣，重複次數同時涵蓋了這部分的變異。
 - 題目公開後可能進入未來模型的訓練資料，日後重跑的分數會偏高；報告註明題目公開日期。
+- 隔離擋不掉 Bash 連網，也擋不掉帳號層級下載的設定（remote settings、policy limits）；後者記入環境清單。
+- 開放式題目的確定性檢查只是門檻，試跑中便宜模型也幾乎全過；品質比較依賴評審與人工評分。
 
 ## 變更紀錄
 
@@ -259,3 +261,21 @@ Claude Code 版本、各模型 ID、jevcc commit、Jev 版本、Blender／Node�
 - 2026-10-15：補 2.4 主要比較、4.1 隔離細節（HOME、不上網、推理強度、花費上限）、4.2 遵從率、4.6 模型版本、5.4、11 已知限制；第 10 節改為已定選擇。（尚未開始任何正式執行。）
 - 2026-10-15：3.4 加 Cycles CPU 規定與實測；第 9 節改為粗估、額度規則（每週保留 30%）與 P1–P4 優先順序。
 - 2026-10-15：**登記**。以上內容皆在任何正式執行之前寫定。
+- 2026-10-15：**實作期間的調整與發現（皆在任何正式執行之前；試跑資料不計入）**
+  - 3.1 題目定案：`bench/open` 13 題——研究 2（research-mq、research-outage〔方向不明確〕）、規劃 2（plan-ci-migration、
+    plan-onboarding〔方向不明確〕）、設計 2（design-ratelimit、design-search〔方向不明確〕）、skill 2（skill-release-notes、
+    skill-api-errors）、Blender 3（blender-product-shot、blender-fix-black、blender-hero〔方向不明確〕）、影片 2（video-intro、
+    video-vague〔方向不明確〕）；加上原有的程式題（易 10、難 5）。
+  - 3.3 新增 `jevcc bench --validate`：每題自動驗證「原始 fixture 失敗、套上 testdata/solution 通過」；新題與難題皆雙向通過，
+    易題暫無參考解，只驗證 fixture 一側。
+  - 4.1 推理強度定為 `--effort medium`（Claude Code 一般預設），評審用 `high`。原計畫寫「登記時寫定」但漏寫，於此補定。
+  - 4.1 不上網：已停用 WebSearch、WebFetch；Bash 仍可連網（無法在不改系統設定下封鎖），列入已知限制。
+    帳號層級的 `remote-settings.json`、`policy-limits.json` 會被下載，無法隔離，記入環境清單。
+  - 4.1 允許清單由乾淨探測產生（`bench/isolation-allow.json`：3 個內建 plugin、5 個內建 agent、19 個內建 skill）；
+    登入失敗時載入的 skill 較少，所以探測會檢查登入成功。
+  - 4.4 網路中斷時暫停重試（第一次端到端試跑整批因 DNS 中斷失敗）。
+  - 5.3 一致性指標修改：評審是兩兩比較、人工是絕對分數，無法直接算加權 kappa。改為把兩份成品的人工分數轉成偏好
+    （高分者勝、同分平手），與評審結論比較，計算一致率與 Cohen's kappa；門檻 0.6 不變。
+  - 9.2 額度換算（試跑實測，claude-2）：5 小時額度 1% ≈ 照定價 $0.16；7 日額度 1% ≈ $1.8–2。
+  - 發現（不改計畫）：開放式題目的確定性檢查，haiku 也幾乎全過；但成品品質差距肉眼可見（例：blender-hero）。
+    這類題目的比較主要靠評審與人工評分，確定性檢查只當門檻。
