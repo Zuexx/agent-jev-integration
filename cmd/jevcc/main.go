@@ -708,18 +708,26 @@ func cmdBench(args []string) int {
 			}
 			return d.Tier, d.CostUSD, nil
 		},
-		JevCost: func(session, jevHome string) float64 {
+		JevUse: func(session, jevHome string) bench.JevUse {
 			recs, _ := stats.LoadDecisions()
 			if jevHome != "" {
 				recs, _ = stats.LoadDecisionsIn(jevHome)
 			}
-			sum := 0.0
+			var u bench.JevUse
 			for _, rec := range recs {
-				if rec.SessionID == session && rec.Decision != nil {
-					sum += rec.Decision.CostUSD
+				if rec.SessionID != session {
+					continue
 				}
+				if rec.Error != "" {
+					u.Errors = append(u.Errors, rec.Error)
+				}
+				if rec.Decision != nil {
+					u.Decisions++
+					u.USD += rec.Decision.CostUSD
+				}
+				u.Advice = append(u.Advice, rec.Advice...)
 			}
-			return sum
+			return u
 		},
 	}
 	stamp := time.Now().Format("20060102-150405")

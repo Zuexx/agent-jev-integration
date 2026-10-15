@@ -98,21 +98,26 @@ func hookSettings(cmd string, events ...string) string {
 }
 
 type Run struct {
-	Task      string             `json:"task"`
-	Arm       string             `json:"arm"`
-	Rep       int                `json:"rep"`
-	Model     string             `json:"model"` // --model passed to claude
-	Pass      bool               `json:"pass"`
-	CheckOut  string             `json:"check_output,omitempty"`
-	ClaudeUSD float64            `json:"claude_cost_usd"`
-	JevUSD    float64            `json:"jev_cost_usd"`
-	DurMS     int64              `json:"duration_ms"`
-	Turns     int                `json:"num_turns"`
-	Subagents int                `json:"subagents"`
-	ModelUSD  map[string]float64 `json:"model_cost_usd"`
-	Tokens    int                `json:"tokens"`
-	SessionID string             `json:"session_id"`
-	Error     string             `json:"error,omitempty"`
+	Task      string  `json:"task"`
+	Arm       string  `json:"arm"`
+	Rep       int     `json:"rep"`
+	Model     string  `json:"model"` // --model passed to claude
+	Pass      bool    `json:"pass"`
+	CheckOut  string  `json:"check_output,omitempty"`
+	ClaudeUSD float64 `json:"claude_cost_usd"`
+	JevUSD    float64 `json:"jev_cost_usd"`
+	// What the hook recorded for this session (hook arms): prompts judged,
+	// Jev errors or timeouts, and the advice kinds it gave.
+	JevDecisions int                `json:"jev_decisions,omitempty"`
+	JevErrors    []string           `json:"jev_errors,omitempty"`
+	JevAdvice    []string           `json:"jev_advice,omitempty"`
+	DurMS        int64              `json:"duration_ms"`
+	Turns        int                `json:"num_turns"`
+	Subagents    int                `json:"subagents"`
+	ModelUSD     map[string]float64 `json:"model_cost_usd"`
+	Tokens       int                `json:"tokens"`
+	SessionID    string             `json:"session_id"`
+	Error        string             `json:"error,omitempty"`
 	// Isolated runs only: what Claude Code reported loading, and anything
 	// outside the allow-list (such a run is an error, not a result).
 	ClaudeVersion string   `json:"claude_version,omitempty"`
@@ -121,6 +126,14 @@ type Run struct {
 }
 
 func (r Run) TotalUSD() float64 { return r.ClaudeUSD + r.JevUSD }
+
+// JevUse is the hook's own record of one session.
+type JevUse struct {
+	USD       float64
+	Decisions int
+	Errors    []string
+	Advice    []string
+}
 
 func LoadTasks(dir string, only []string) ([]Task, error) {
 	want := map[string]bool{}
@@ -177,7 +190,7 @@ func CopyTree(src, dst string) error {
 	})
 }
 
-// Runner holds what one run needs; Pick and JevCost are injected by main.
+// Runner holds what one run needs; Pick and JevUse are injected by main.
 type Runner struct {
 	Claude    string
 	MainModel string
@@ -186,9 +199,9 @@ type Runner struct {
 	MaxUSD    float64
 	// Pick returns the model for the route arm and Jev's cost for that decision.
 	Pick func(ctx context.Context, prompt string) (model string, jevUSD float64, err error)
-	// JevCost sums the hook's Jev cost for a session from the decisions logs
-	// in jevHome ("" = the evaluator's own state directory).
-	JevCost func(sessionID, jevHome string) float64
+	// JevUse reads what the hook recorded for a session from the decisions
+	// logs in jevHome ("" = the evaluator's own state directory).
+	JevUse func(sessionID, jevHome string) JevUse
 	// Isolate runs claude in a throwaway HOME / CLAUDE_CONFIG_DIR / JEVCC_HOME
 	// with stream-json output, and checks its init event against Allow.
 	Isolate bool
@@ -278,7 +291,10 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 			res.Error = err.Error()
 			return res
 		}
-		defer os.RemoveAll(sb.Root)
+		// JEVCC_BENCH_KEEP=1 leaves the sandbox for inspection.
+		if os.Getenv("JEVCC_BENCH_KEEP") == "" {
+			defer os.RemoveAll(sb.Root)
+		}
 		base = sb.env(base, r.PassEnv)
 		for i := range args {
 			if args[i] == "--output-format" {
@@ -348,8 +364,13 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 			res.Tokens += int(v)
 		}
 	}
-	if mode == "on" && r.JevCost != nil {
-		res.JevUSD = r.JevCost(cr.SessionID, sb.JevHome)
+	if mode == "on" && r.JevUse != nil {
+		u := r.JevUse(cr.SessionID, sb.JevHome)
+		res.JevUSD, res.JevDecisions, res.JevErrors, res.JevAdvice = u.USD, u.Decisions, u.Errors, u.Advice
+		// A clean sandbox with no record means the hook never ran.
+		if r.Isolate && u.Decisions == 0 && len(u.Errors) == 0 && res.Error == "" {
+			res.Error = "jev: the hook recorded nothing"
+		}
 	}
 	check := exec.CommandContext(ctx, "sh", "-c", t.Check)
 	check.Dir = work

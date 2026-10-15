@@ -77,7 +77,10 @@ echo '{"type":"result","total_cost_usd":0.25,"num_turns":2,"session_id":"S1","is
 	var jevHome string
 	r := &Runner{
 		Claude: fake, MainModel: "haiku", Isolate: true, PassEnv: []string{"CLAUDE_CODE_OAUTH_TOKEN=tok"}, SaveDir: streams,
-		JevCost: func(session, home string) float64 { jevHome = home; return 0.01 },
+		JevUse: func(session, home string) JevUse {
+			jevHome = home
+			return JevUse{USD: 0.01, Decisions: 1, Advice: []string{"files"}}
+		},
 	}
 	task := Task{Name: "t", Dir: dir, Prompt: "p", Check: "grep -q stream-json args.txt && grep -q strict-mcp-config args.txt", TimeoutS: 30}
 	res := r.Do(context.Background(), task, ArmHook, 1)
@@ -87,7 +90,7 @@ echo '{"type":"result","total_cost_usd":0.25,"num_turns":2,"session_id":"S1","is
 	if q := res.Quota; q == nil || q.FiveHour != 3 || q.SevenDay != 12 || q.SevenDayReset != 200 {
 		t.Fatalf("quota %+v", res.Quota)
 	}
-	if res.JevUSD != 0.01 || jevHome == "" {
+	if res.JevUSD != 0.01 || res.JevDecisions != 1 || len(res.JevAdvice) != 1 || jevHome == "" {
 		t.Fatal("jev cost not read from the sandbox", res.JevUSD, jevHome)
 	}
 	if _, err := os.Stat(jevHome); !os.IsNotExist(err) {
