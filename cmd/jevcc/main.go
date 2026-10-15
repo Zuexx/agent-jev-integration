@@ -606,7 +606,7 @@ func cmdEval(args []string) int {
 
 func cmdBench(args []string) int {
 	fset := flag.NewFlagSet("bench", flag.ContinueOnError)
-	tasksDir := fset.String("tasks", "bench/tasks", "task directory")
+	tasksDir := fset.String("tasks", "bench/tasks", "comma-separated task directories")
 	armsFlag := fset.String("arms", "off,hook,route", "arms to run")
 	repeat := fset.Int("repeat", 3, "runs per task and arm")
 	model := fset.String("model", "opus", "main model for the off and hook arms")
@@ -619,6 +619,7 @@ func cmdBench(args []string) int {
 	tokenFile := fset.String("token-file", "", "file holding a `claude setup-token` token for isolated runs (else $CLAUDE_CODE_OAUTH_TOKEN)")
 	allowPath := fset.String("allow", "bench/isolation-allow.json", "agents and skills a clean Claude Code loads by itself")
 	probe := fset.Bool("probe-allow", false, "run one clean isolated session and write what it loads to --allow, then exit")
+	validate := fset.Bool("validate", false, "check every task's check: fails on the fixture, passes with testdata/solution; no claude runs")
 	if err := fset.Parse(args); err != nil {
 		return 2
 	}
@@ -626,9 +627,35 @@ func cmdBench(args []string) int {
 	if *only != "" {
 		onlyList = strings.Split(*only, ",")
 	}
-	tasks, err := bench.LoadTasks(*tasksDir, onlyList)
-	if err != nil {
-		return fail(err)
+	var tasks []bench.Task
+	for _, d := range strings.Split(*tasksDir, ",") {
+		ts, err := bench.LoadTasks(d, onlyList)
+		if err != nil {
+			return fail(err)
+		}
+		tasks = append(tasks, ts...)
+	}
+	if *validate {
+		bad := 0
+		for _, t := range tasks {
+			v := bench.Validate(context.Background(), t)
+			status := "ok"
+			switch {
+			case !v.HasSolution && v.FailsOnFixture:
+				status = "ok (no testdata/solution: only the fixture side is checked)"
+			case !v.OK():
+				status, bad = "BAD: "+v.Output, bad+1
+			}
+			fmt.Printf("%-24s %s", t.Name, status)
+			if len(v.Metrics) > 0 {
+				fmt.Printf("  metrics with solution: %v", v.Metrics)
+			}
+			fmt.Println()
+		}
+		if bad > 0 {
+			return 1
+		}
+		return 0
 	}
 	arms := strings.Split(*armsFlag, ",")
 	jobs := bench.Plan(tasks, arms, *repeat, *seed)

@@ -104,3 +104,53 @@ echo '{"type":"result","total_cost_usd":0.25,"num_turns":2,"session_id":"S1","is
 		t.Fatal(string(b))
 	}
 }
+
+func TestValidate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("checks are sh")
+	}
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "fixture"), 0o755)
+	os.WriteFile(filepath.Join(dir, "fixture", "a.txt"), []byte("todo"), 0o644)
+	os.MkdirAll(filepath.Join(dir, "testdata", "solution"), 0o755)
+	os.WriteFile(filepath.Join(dir, "testdata", "solution", "a.txt"), []byte("done"), 0o644)
+	good := Task{Name: "g", Dir: dir, Check: "grep -q done a.txt && echo 'METRIC hits=2'", TimeoutS: 10}
+	v := Validate(context.Background(), good)
+	if !v.FailsOnFixture || !v.PassesWithSolution || v.Metrics["hits"] != 2 {
+		t.Fatalf("%+v", v)
+	}
+	// A check that passes on the untouched fixture proves nothing.
+	weak := Task{Name: "w", Dir: dir, Check: "true", TimeoutS: 10}
+	if v := Validate(context.Background(), weak); v.FailsOnFixture || v.OK() {
+		t.Fatalf("%+v", v)
+	}
+}
+
+func TestParseMetrics(t *testing.T) {
+	m := parseMetrics("x\nMETRIC risk_hits=3\nMETRIC  bad\nMETRIC words=1200.5\n")
+	if len(m) != 2 || m["risk_hits"] != 3 || m["words"] != 1200.5 {
+		t.Fatal(m)
+	}
+}
+
+func TestTaskSkillsInstalledAndAllowed(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as a fake claude")
+	}
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "fixture"), 0o755)
+	os.MkdirAll(filepath.Join(dir, "skills", "release-notes"), 0o755)
+	os.WriteFile(filepath.Join(dir, "skills", "release-notes", "SKILL.md"), []byte("---\nname: release-notes\n---\n"), 0o644)
+	fake := filepath.Join(t.TempDir(), "claude")
+	os.WriteFile(fake, []byte(`#!/bin/sh
+test -f "$CLAUDE_CONFIG_DIR/skills/release-notes/SKILL.md" && echo installed > seen.txt
+echo '{"type":"system","subtype":"init","plugins":[],"mcp_servers":[],"agents":[],"skills":["release-notes"],"memory_paths":{}}'
+echo '{"type":"result","total_cost_usd":0.1,"session_id":"S","is_error":false}'
+`), 0o755)
+	r := &Runner{Claude: fake, MainModel: "haiku", Isolate: true}
+	task := Task{Name: "s", Dir: dir, Prompt: "p", Check: "grep -q installed seen.txt", Skills: []string{"release-notes"}, TimeoutS: 30}
+	res := r.Do(context.Background(), task, ArmOff, 1)
+	if res.Error != "" || !res.Pass {
+		t.Fatalf("%+v", res)
+	}
+}

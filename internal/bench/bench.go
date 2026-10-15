@@ -33,6 +33,11 @@ type Task struct {
 	// name in the work dir) instead of fixture/, e.g. parts of this repo for
 	// code-navigation tasks.
 	FixtureFrom []string `json:"fixture_from,omitempty"`
+	// Category groups tasks in the report (docs/eval-plan.md 3.1).
+	Category string `json:"category,omitempty"`
+	// Skills are directories under the task's skills/ that an isolated run
+	// installs into its CLAUDE_CONFIG_DIR, for tasks that need a skill.
+	Skills []string `json:"skills,omitempty"`
 }
 
 const (
@@ -120,9 +125,11 @@ type Run struct {
 	Error        string             `json:"error,omitempty"`
 	// Isolated runs only: what Claude Code reported loading, and anything
 	// outside the allow-list (such a run is an error, not a result).
-	ClaudeVersion string   `json:"claude_version,omitempty"`
-	Quota         *Quota   `json:"quota,omitempty"`
-	Violations    []string `json:"isolation_violations,omitempty"`
+	ClaudeVersion string `json:"claude_version,omitempty"`
+	Quota         *Quota `json:"quota,omitempty"`
+	// Metrics are the check's graded measures (METRIC lines).
+	Metrics    map[string]float64 `json:"metrics,omitempty"`
+	Violations []string           `json:"isolation_violations,omitempty"`
 }
 
 func (r Run) TotalUSD() float64 { return r.ClaudeUSD + r.JevUSD }
@@ -210,27 +217,65 @@ type Runner struct {
 	SaveDir string   // keeps each isolated run's stream here when set
 }
 
-func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
-	res := Run{Task: t.Name, Arm: arm, Rep: rep, Model: r.MainModel}
+// newWork copies the task's fixture into a fresh directory.
+func newWork(t Task) (string, error) {
 	work, err := os.MkdirTemp("", "jevcc-bench-"+t.Name+"-")
 	if err != nil {
-		res.Error = err.Error()
-		return res
+		return "", err
 	}
-	defer os.RemoveAll(work)
 	if len(t.FixtureFrom) == 0 {
 		if err := CopyTree(filepath.Join(t.Dir, "fixture"), work); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			res.Error = err.Error()
-			return res
+			os.RemoveAll(work)
+			return "", err
 		}
 	}
 	for _, p := range t.FixtureFrom {
 		src := filepath.Join(t.Dir, p)
 		if err := CopyTree(src, filepath.Join(work, filepath.Base(src))); err != nil {
-			res.Error = err.Error()
-			return res
+			os.RemoveAll(work)
+			return "", err
 		}
 	}
+	return work, nil
+}
+
+// runCheck runs the task's check in work and returns whether it passed,
+// its output, and the METRIC lines it printed.
+func runCheck(ctx context.Context, t Task, work string) (bool, string, map[string]float64) {
+	check := exec.CommandContext(ctx, "sh", "-c", t.Check)
+	check.Dir = work
+	// TASK_DIR lets a check copy hidden tests that the agent never saw.
+	check.Env = append(os.Environ(), "TASK_DIR="+t.Dir)
+	co, cerr := check.CombinedOutput()
+	return cerr == nil, string(co), parseMetrics(string(co))
+}
+
+// parseMetrics reads "METRIC name=value" lines, which a check prints for
+// graded measures (e.g. how many hidden risks a plan names) besides pass/fail.
+func parseMetrics(out string) map[string]float64 {
+	m := map[string]float64{}
+	for _, line := range strings.Split(out, "\n") {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(line), "METRIC ")
+		if !ok {
+			continue
+		}
+		k, v, ok := strings.Cut(strings.TrimSpace(rest), "=")
+		var f float64
+		if _, err := fmt.Sscan(v, &f); ok && err == nil && k != "" {
+			m[k] = f
+		}
+	}
+	return m
+}
+
+func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
+	res := Run{Task: t.Name, Arm: arm, Rep: rep, Model: r.MainModel}
+	work, err := newWork(t)
+	if err != nil {
+		res.Error = err.Error()
+		return res
+	}
+	defer os.RemoveAll(work)
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(t.TimeoutS)*time.Second)
 	defer cancel()
 	mode, delegate := "off", ""
@@ -296,6 +341,12 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 			defer os.RemoveAll(sb.Root)
 		}
 		base = sb.env(base, r.PassEnv)
+		for _, s := range t.Skills {
+			if err := CopyTree(filepath.Join(t.Dir, "skills", s), filepath.Join(sb.ConfigDir, "skills", s)); err != nil {
+				res.Error = "skill " + s + ": " + err.Error()
+				return res
+			}
+		}
 		for i := range args {
 			if args[i] == "--output-format" {
 				args[i+1] = "stream-json"
@@ -326,7 +377,9 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 		if in != nil {
 			res.ClaudeVersion = in.Version
 		}
-		res.Violations = checkIsolation(in, hooks, sb, r.Allow, agents, events)
+		allow := r.Allow
+		allow.Skills = append(append([]string{}, allow.Skills...), t.Skills...)
+		res.Violations = checkIsolation(in, hooks, sb, allow, agents, events)
 		res.Quota = parseQuota(out)
 		out = result
 	}
@@ -372,14 +425,10 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 			res.Error = "jev: the hook recorded nothing"
 		}
 	}
-	check := exec.CommandContext(ctx, "sh", "-c", t.Check)
-	check.Dir = work
-	// TASK_DIR lets a check copy hidden tests that the agent never saw.
-	check.Env = append(os.Environ(), "TASK_DIR="+t.Dir)
-	co, cerr := check.CombinedOutput()
-	res.Pass = cerr == nil
+	var co string
+	res.Pass, co, res.Metrics = runCheck(ctx, t, work)
 	if !res.Pass {
-		res.CheckOut = tail(string(co), 400)
+		res.CheckOut = tail(co, 400)
 	}
 	return res
 }

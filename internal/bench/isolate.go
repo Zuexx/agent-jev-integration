@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // An isolated run gets its own HOME, CLAUDE_CONFIG_DIR and JEVCC_HOME, so the
@@ -265,4 +266,57 @@ func (r *Runner) ProbeAllow(ctx context.Context) (Allow, []string, error) {
 	sort.Strings(a.Agents)
 	sort.Strings(a.Skills)
 	return a, checkIsolation(in, hooks, sb, a, nil, nil), nil
+}
+
+// Validation is whether a task's check can tell work done from work not done.
+type Validation struct {
+	Task               string
+	FailsOnFixture     bool
+	PassesWithSolution bool
+	HasSolution        bool
+	Metrics            map[string]float64 // from the run with the solution
+	Output             string             // check output when something is wrong
+}
+
+func (v Validation) OK() bool { return v.FailsOnFixture && v.PassesWithSolution }
+
+// Validate runs the check on the untouched fixture (it must fail) and on the
+// fixture with testdata/solution laid over it (it must pass). The solution
+// mirrors the work directory.
+func Validate(ctx context.Context, t Task) Validation {
+	v := Validation{Task: t.Name}
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(max(t.TimeoutS, 60))*time.Second)
+	defer cancel()
+	work, err := newWork(t)
+	if err != nil {
+		v.Output = err.Error()
+		return v
+	}
+	defer os.RemoveAll(work)
+	pass, out, _ := runCheck(ctx, t, work)
+	v.FailsOnFixture = !pass
+	if pass {
+		v.Output = "passes on the untouched fixture: " + tail(out, 300)
+	}
+	sol := filepath.Join(t.Dir, "testdata", "solution")
+	if _, err := os.Stat(sol); err != nil {
+		return v
+	}
+	v.HasSolution = true
+	work2, err := newWork(t)
+	if err != nil {
+		v.Output = err.Error()
+		return v
+	}
+	defer os.RemoveAll(work2)
+	if err := CopyTree(sol, work2); err != nil {
+		v.Output = err.Error()
+		return v
+	}
+	pass, out, v.Metrics = runCheck(ctx, t, work2)
+	v.PassesWithSolution = pass
+	if !pass {
+		v.Output = "fails with the solution: " + tail(out, 300)
+	}
+	return v
 }
