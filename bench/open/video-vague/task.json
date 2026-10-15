@@ -1,0 +1,9 @@
+{
+ "category": "video",
+ "variant": "vague",
+ "prompt": "Make a short video that makes developers want to try Tidy. Put the rendered video in out/.",
+ "check": "python3 -I \"$TASK_DIR/check.py\"",
+ "cache": ["remotion-4.0.531"],
+ "tier": "opus",
+ "timeout_s": 1800
+}

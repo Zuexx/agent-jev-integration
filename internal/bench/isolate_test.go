@@ -82,7 +82,7 @@ echo '{"type":"result","total_cost_usd":0.25,"num_turns":2,"session_id":"S1","is
 			return JevUse{USD: 0.01, Decisions: 1, Advice: []string{"files"}}
 		},
 	}
-	task := Task{Name: "t", Dir: dir, Prompt: "p", Check: "grep -q stream-json args.txt && grep -q strict-mcp-config args.txt", TimeoutS: 30}
+	task := Task{Name: "t", Dir: dir, Prompt: "p", Check: "grep -q stream-json args.txt && grep -q strict-mcp-config args.txt && grep -q 'disallowedTools WebSearch WebFetch --model' args.txt", TimeoutS: 30}
 	res := r.Do(context.Background(), task, ArmHook, 1)
 	if res.Error != "" || !res.Pass || res.ClaudeUSD != 0.25 || res.SessionID != "S1" || res.ClaudeVersion != "9.9" {
 		t.Fatalf("%+v", res)
@@ -169,5 +169,28 @@ func TestToolUses(t *testing.T) {
 	n := toolUses([]byte(out))
 	if n["mcp__blender__render"] != 2 || n["Agent"] != 1 || len(n) != 2 {
 		t.Fatal(n)
+	}
+}
+
+func TestTaskCacheCopied(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as a fake claude")
+	}
+	dir, cache := t.TempDir(), t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "fixture"), 0o755)
+	os.MkdirAll(filepath.Join(cache, "deps", "node_modules", "pkg"), 0o755)
+	os.WriteFile(filepath.Join(cache, "deps", "node_modules", "pkg", "index.js"), []byte("x"), 0o644)
+	fake := filepath.Join(t.TempDir(), "claude")
+	os.WriteFile(fake, []byte(`#!/bin/sh
+echo '{"total_cost_usd":0.1,"session_id":"S","is_error":false}'
+`), 0o755)
+	r := &Runner{Claude: fake, MainModel: "haiku", CacheDir: cache, SaveDir: t.TempDir()}
+	task := Task{Name: "c", Dir: dir, Prompt: "p", Check: "test -f node_modules/pkg/index.js", Cache: []string{"deps"}, TimeoutS: 30}
+	if res := r.Do(context.Background(), task, ArmOff, 1); res.Error != "" || !res.Pass || res.Artifacts != "" {
+		t.Fatalf("%+v", res)
+	}
+	task.Cache = []string{"absent"}
+	if res := r.Do(context.Background(), task, ArmOff, 1); !strings.Contains(res.Error, "cache absent missing") {
+		t.Fatalf("%+v", res)
 	}
 }

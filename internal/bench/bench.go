@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -39,6 +40,9 @@ type Task struct {
 	Variant  string `json:"variant,omitempty"`
 	// MCP names the servers (from Runner.MCPServers) the task needs.
 	MCP []string `json:"mcp,omitempty"`
+	// Cache names directories under Runner.CacheDir whose contents are
+	// copied into the work directory (e.g. an offline node_modules).
+	Cache []string `json:"cache,omitempty"`
 	// Skills are directories under the task's skills/ that an isolated run
 	// installs into its CLAUDE_CONFIG_DIR, for tasks that need a skill.
 	Skills []string `json:"skills,omitempty"`
@@ -226,6 +230,7 @@ type Runner struct {
 	SaveDir string   // keeps each isolated run's stream here when set
 	// MCPServers are the MCP server configs tasks can ask for, by name.
 	MCPServers map[string]any
+	CacheDir   string // where Task.Cache entries live
 }
 
 // newWork copies the task's fixture into a fresh directory.
@@ -248,6 +253,17 @@ func newWork(t Task) (string, error) {
 		}
 	}
 	return work, nil
+}
+
+// cloneInto copies the contents of src into dst. On macOS cp -c clones on
+// APFS, so a large node_modules costs no time or space.
+func cloneInto(src, dst string) error {
+	if runtime.GOOS == "darwin" {
+		if err := exec.Command("cp", "-cR", src+"/.", dst).Run(); err == nil {
+			return nil
+		}
+	}
+	return CopyTree(src, dst)
 }
 
 // saveChanged copies the files in work that are new or differ from the
@@ -319,6 +335,17 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 		return res
 	}
 	defer os.RemoveAll(work)
+	for _, c := range t.Cache {
+		src := filepath.Join(r.CacheDir, c)
+		if _, err := os.Stat(src); err != nil {
+			res.Error = "cache " + c + " missing in " + r.CacheDir + " (see bench/open/_lib/prepare-*-cache.sh)"
+			return res
+		}
+		if err := cloneInto(src, work); err != nil {
+			res.Error = "cache " + c + ": " + err.Error()
+			return res
+		}
+	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(t.TimeoutS)*time.Second)
 	defer cancel()
 	mode, delegate := "off", ""
@@ -395,7 +422,9 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 				args[i+1] = "stream-json"
 			}
 		}
-		args = append(args, "--verbose", "--strict-mcp-config")
+		// No web: tasks ship their data, and fetched pages would make runs
+		// irreproducible (docs/eval-plan.md 4.1).
+		args = append(args, "--verbose", "--strict-mcp-config", "--disallowedTools", "WebSearch", "WebFetch")
 	}
 	if len(t.MCP) > 0 {
 		servers := map[string]any{}
