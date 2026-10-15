@@ -32,7 +32,10 @@ if not any("store" in b.lower() or "repository" in b.lower() for b in where.get(
 text = "\n".join(lines).lower()
 if any(w in text for w in ("golangci", "flaky", "cache go modules")):
     errs.append("chore/ci/test included")
-if re.search(r"\b[0-9a-f]{7}\b", text) or re.search(r"^- (feat|fix|refactor|deps)", text, re.M):
+# Copied hashes are the ones in changes.txt; a copied type prefix keeps its
+# syntax ("fix:", "fix(sync):", "feat!:"), unlike a sentence such as "Fixed ...".
+hashes = re.findall(r"^([0-9a-f]{7}) ", open("changes.txt", encoding="utf-8").read(), re.M)
+if any(h in text for h in hashes) or re.search(r"^- (feat|fix|refactor|deps|chore|ci|test)(\([^)]*\))?!?:", text, re.M):
     errs.append("hash or type prefix copied")
 if any(len(l) > 100 for l in lines) or re.search("[\U0001F300-\U0001FAFF☀-➿]", text):
     errs.append("long line or emoji")

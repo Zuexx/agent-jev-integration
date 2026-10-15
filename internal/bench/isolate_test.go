@@ -13,12 +13,12 @@ func TestSandboxEnvDropsEvaluatorSetup(t *testing.T) {
 	sb := sandbox{Root: "/sb", Home: "/sb/home", ConfigDir: "/sb/home/.claude", JevHome: "/sb/jevcc"}
 	base := []string{"PATH=/bin", "HOME=/Users/me", "CLAUDE_CONFIG_DIR=/Users/me/.claude", "JEVCC_HOME=/Users/me/.jevcc", "ANTHROPIC_MODEL=opus", "BLENDER=/b"}
 	env := strings.Join(sb.env(base, []string{"CLAUDE_CODE_OAUTH_TOKEN=tok"}), "\n")
-	for _, want := range []string{"PATH=/bin", "HOME=/sb/home", "CLAUDE_CONFIG_DIR=/sb/home/.claude", "JEVCC_HOME=/sb/jevcc", "BLENDER=/b", "CLAUDE_CODE_OAUTH_TOKEN=tok", "DISABLE_AUTOUPDATER=1"} {
+	for _, want := range []string{"PATH=/bin", "HOME=/sb/home", "CLAUDE_CONFIG_DIR=/sb/home/.claude", "JEVCC_HOME=/sb/jevcc", "CLAUDE_CODE_OAUTH_TOKEN=tok", "DISABLE_AUTOUPDATER=1"} {
 		if !strings.Contains(env+"\n", want+"\n") {
 			t.Errorf("missing %s in\n%s", want, env)
 		}
 	}
-	for _, bad := range []string{"/Users/me", "ANTHROPIC_MODEL"} {
+	for _, bad := range []string{"/Users/me", "ANTHROPIC_MODEL", "BLENDER"} {
 		if strings.Contains(env, bad) {
 			t.Errorf("leaked %s in\n%s", bad, env)
 		}

@@ -20,7 +20,9 @@ import (
 // anything outside the allow-list into a violation and the run is discarded.
 
 // passEnv are the evaluator's variables an isolated run may see.
-var passEnv = []string{"PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR", "USER", "LOGNAME", "SHELL", "BLENDER"}
+// BLENDER is not among them: the blender MCP server gets it from its own
+// config, and the session itself should reach Blender only through MCP.
+var passEnv = []string{"PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR", "USER", "LOGNAME", "SHELL"}
 
 type sandbox struct{ Root, Home, ConfigDir, JevHome string }
 
