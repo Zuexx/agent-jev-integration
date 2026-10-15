@@ -33,8 +33,10 @@ type Task struct {
 	// name in the work dir) instead of fixture/, e.g. parts of this repo for
 	// code-navigation tasks.
 	FixtureFrom []string `json:"fixture_from,omitempty"`
-	// Category groups tasks in the report (docs/eval-plan.md 3.1).
+	// Category groups tasks in the report (docs/eval-plan.md 3.1); Variant
+	// "vague" marks the open-direction tasks (category H in the plan).
 	Category string `json:"category,omitempty"`
+	Variant  string `json:"variant,omitempty"`
 	// Skills are directories under the task's skills/ that an isolated run
 	// installs into its CLAUDE_CONFIG_DIR, for tasks that need a skill.
 	Skills []string `json:"skills,omitempty"`

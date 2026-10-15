@@ -1,0 +1,7 @@
+{
+ "category": "research",
+ "prompt": "Read every document in corpus/. Our team needs a managed message queue with all of these: exactly-once delivery to consumers, data stored in the EU, a sustained 2,000 messages per second, and a total cost of at most $500 per month. Recommend one of the three products in answer.md. The first line must be `Recommendation: <product name>`. Support each claim with a quote from the corpus on its own line, in the form `> \"exact quote\" — [file name]`. Use only the corpus, not outside knowledge.",
+ "check": "python3 -I \"$TASK_DIR/check.py\"",
+ "tier": "opus",
+ "timeout_s": 600
+}

@@ -1,0 +1,11 @@
+[09:07] maria: api is throwing 5xx everywhere, anyone deploying?
+[09:09] dev-bot: no deploys in the last hour
+[09:16] ci-bot: api-gateway v4.12 deployed
+[09:18] maria: ok v4.12 just went out, that has to be it
+[09:38] maria: rolling back v4.12
+[09:45] maria: rollback done, still failing?? 
+[09:52] ken: db cpu was spiking earlier, could be the db
+[09:55] ken: nvm db looks normal now
+[10:02] jun: gateway logs say x509 expired for api.internal. checking cert
+[10:05] jun: renewed api.internal cert
+[10:07] maria: errors gone
