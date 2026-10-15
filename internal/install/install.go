@@ -236,14 +236,22 @@ func Agents() map[string][]byte {
 }
 
 // AgentsJSON renders the agents for `claude --agents` (used by the benchmark).
-func AgentsJSON() string {
+func AgentsJSON() string { return agentsJSON(false) }
+
+// AgentsJSONOpenTools is AgentsJSON without the tools lists, so every agent
+// inherits the session's tools, MCP and Skill included (the bench's tools
+// comparison, docs/eval-plan.md Q4).
+func AgentsJSONOpenTools() string { return agentsJSON(true) }
+
+func agentsJSON(openTools bool) string {
 	m := map[string]any{}
 	for name, b := range Agents() {
 		fm, body := roster.Frontmatter(string(b))
-		m[strings.TrimSuffix(name, ".md")] = map[string]any{
-			"description": fm["description"], "prompt": strings.TrimSpace(body), "model": fm["model"],
-			"tools": strings.Split(strings.ReplaceAll(fm["tools"], " ", ""), ","),
+		a := map[string]any{"description": fm["description"], "prompt": strings.TrimSpace(body), "model": fm["model"]}
+		if t := strings.ReplaceAll(fm["tools"], " ", ""); t != "" && !openTools {
+			a["tools"] = strings.Split(t, ",")
 		}
+		m[strings.TrimSuffix(name, ".md")] = a
 	}
 	b, _ := json.Marshal(m)
 	return string(b)

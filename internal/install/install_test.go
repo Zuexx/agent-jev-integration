@@ -207,3 +207,24 @@ func TestBackupNameIsPortable(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestAgentsJSONOpenToolsDropsToolLists(t *testing.T) {
+	var closed, open map[string]map[string]any
+	if err := json.Unmarshal([]byte(AgentsJSON()), &closed); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(AgentsJSONOpenTools()), &open); err != nil {
+		t.Fatal(err)
+	}
+	if len(open) != len(closed) || len(open) == 0 {
+		t.Fatal(len(open), len(closed))
+	}
+	for name, a := range closed {
+		if _, ok := a["tools"]; !ok {
+			t.Errorf("%s: restricted variant lost its tools", name)
+		}
+		if _, ok := open[name]["tools"]; ok {
+			t.Errorf("%s: open variant still lists tools", name)
+		}
+	}
+}

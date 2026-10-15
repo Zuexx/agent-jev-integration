@@ -660,7 +660,14 @@ func cmdBench(args []string) int {
 		}
 		return 0
 	}
-	arms := strings.Split(*armsFlag, ",")
+	var arms []string
+	for _, a := range strings.Split(*armsFlag, ",") {
+		if _, _, _, ok := bench.ParseLeadArm(a); ok && !bench.LeadArmApplicable(a) {
+			fmt.Fprintf(os.Stderr, "skipping %s: nowhere to delegate (docs/eval-plan.md 2.2)\n", a)
+			continue
+		}
+		arms = append(arms, a)
+	}
 	jobs := bench.Plan(tasks, arms, *repeat, *seed)
 	if *dry {
 		for _, j := range jobs {
@@ -731,7 +738,7 @@ func cmdBench(args []string) int {
 	}
 	r := &bench.Runner{
 		Isolate: *isolate, Allow: allow, PassEnv: passEnv, MCPServers: mcp, CacheDir: *cacheDir,
-		Claude: claude, MainModel: *model, HookCmd: install.HookCommand(self), Agents: install.AgentsJSON(), MaxUSD: *maxUSD,
+		Claude: claude, MainModel: *model, HookCmd: install.HookCommand(self), Agents: install.AgentsJSON(), AgentsOpen: install.AgentsJSONOpenTools(), MaxUSD: *maxUSD,
 		Pick: func(ctx context.Context, prompt string) (string, float64, error) {
 			d, err := decide(ctx, cfg, prompt, nil)
 			if err != nil {

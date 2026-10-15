@@ -67,6 +67,43 @@ const (
 	ArmEscalateVerify = "escalate+verify"
 )
 
+// ParseLeadArm reads "<lead>/<direction>[/open]" (docs/eval-plan.md 2.1):
+// the lead model, then Jev off, or on with delegation up (jevcc's defaults:
+// escalate plus Stop review), down (delegate to cheaper jev-* agents) or
+// both; "/open" gives the jev-* subagents every tool.
+func ParseLeadArm(arm string) (lead, dir string, open, ok bool) {
+	parts := strings.Split(arm, "/")
+	if len(parts) < 2 || len(parts) > 3 || (len(parts) == 3 && parts[2] != "open") {
+		return "", "", false, false
+	}
+	switch parts[0] {
+	case "opus", "sonnet", "haiku":
+	default:
+		return "", "", false, false
+	}
+	switch parts[1] {
+	case "off", "up", "down", "both":
+	default:
+		return "", "", false, false
+	}
+	return parts[0], parts[1], len(parts) == 3, true
+}
+
+// LeadArmApplicable is false for combinations with nowhere to delegate:
+// opus has nothing stronger, haiku nothing cheaper (plan 2.2).
+func LeadArmApplicable(arm string) bool {
+	lead, dir, _, ok := ParseLeadArm(arm)
+	switch {
+	case !ok:
+		return false
+	case lead == "opus" && (dir == "up" || dir == "both"):
+		return false
+	case lead == "haiku" && (dir == "down" || dir == "both"):
+		return false
+	}
+	return true
+}
+
 func without(args []string, flag string) []string {
 	var out []string
 	for _, a := range args {
@@ -216,7 +253,9 @@ type Runner struct {
 	MainModel string
 	HookCmd   string // shell command for the UserPromptSubmit hook in the hook arm
 	Agents    string // --agents JSON for the delegate-agent arm
-	MaxUSD    float64
+	// AgentsOpen is Agents without tool lists (lead arms ending in /open).
+	AgentsOpen string
+	MaxUSD     float64
 	// Pick returns the model for the route arm and Jev's cost for that decision.
 	Pick func(ctx context.Context, prompt string) (model string, jevUSD float64, err error)
 	// JevUse reads what the hook recorded for a session from the decisions
@@ -354,6 +393,33 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 		args = append(args, "--max-budget-usd", fmt.Sprint(r.MaxUSD))
 	}
 	var extraEnv []string
+	if lead, dir, open, ok := ParseLeadArm(arm); ok {
+		res.Model = lead
+		if dir != "off" {
+			mode = "on"
+			agents := r.Agents
+			if open {
+				agents = r.AgentsOpen
+			}
+			args = append(args, "--agents", agents)
+			events := []string{"UserPromptSubmit"}
+			extraEnv = append(extraEnv, "JEVCC_MAIN="+lead)
+			switch dir {
+			case "up":
+				extraEnv = append(extraEnv, "JEVCC_DELEGATE=off", "JEVCC_ESCALATE=1", "JEVCC_VERIFY=1")
+			case "down":
+				extraEnv = append(extraEnv, "JEVCC_DELEGATE=agent", "JEVCC_ESCALATE=0", "JEVCC_VERIFY=0")
+			case "both":
+				extraEnv = append(extraEnv, "JEVCC_DELEGATE=agent", "JEVCC_ESCALATE=1", "JEVCC_VERIFY=1")
+			}
+			if dir != "down" {
+				// The Stop review reads the transcript, so it must be written.
+				events = append(events, "Stop")
+				args = without(args, "--no-session-persistence")
+			}
+			args = append(args, "--settings", hookSettings(r.HookCmd, events...))
+		}
+	}
 	switch arm {
 	case ArmHaiku:
 		res.Model = "haiku"

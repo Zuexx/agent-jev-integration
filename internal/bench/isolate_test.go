@@ -194,3 +194,56 @@ echo '{"total_cost_usd":0.1,"session_id":"S","is_error":false}'
 		t.Fatalf("%+v", res)
 	}
 }
+
+func TestParseLeadArm(t *testing.T) {
+	for _, c := range []struct {
+		arm             string
+		lead, dir       string
+		open, ok, apply bool
+	}{
+		{"opus/off", "opus", "off", false, true, true},
+		{"haiku/up", "haiku", "up", false, true, true},
+		{"sonnet/both/open", "sonnet", "both", true, true, true},
+		{"opus/up", "opus", "up", false, true, false},
+		{"haiku/down", "haiku", "down", false, true, false},
+		{"opus/both", "opus", "both", false, true, false},
+		{"gpt/off", "", "", false, false, false},
+		{"opus/sideways", "", "", false, false, false},
+		{"off", "", "", false, false, false},
+	} {
+		lead, dir, open, ok := ParseLeadArm(c.arm)
+		if lead != c.lead || dir != c.dir || open != c.open || ok != c.ok || LeadArmApplicable(c.arm) != c.apply {
+			t.Errorf("%s: %q %q %v %v applicable=%v", c.arm, lead, dir, open, ok, LeadArmApplicable(c.arm))
+		}
+	}
+}
+
+func TestLeadArmConfiguresRun(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as a fake claude")
+	}
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "fixture"), 0o755)
+	fake := filepath.Join(t.TempDir(), "claude")
+	os.WriteFile(fake, []byte(`#!/bin/sh
+printf '%s\n' "$@" > args.txt
+env | grep '^JEVCC_' | sort > env.txt
+echo '{"total_cost_usd":0.1,"session_id":"S","is_error":false}'
+`), 0o755)
+	r := &Runner{Claude: fake, HookCmd: "jevcc hook", Agents: `{"jev-haiku":{"tools":["Read"]}}`, AgentsOpen: `{"jev-haiku":{}}`,
+		JevUse: func(string, string) JevUse { return JevUse{Decisions: 1} }}
+	task := Task{Name: "a", Dir: dir, Prompt: "p", TimeoutS: 30, Check: `grep -qx sonnet args.txt && grep -qx '{"jev-haiku":{}}' args.txt && ` +
+		`grep -qx JEVCC_DELEGATE=agent env.txt && grep -qx JEVCC_ESCALATE=0 env.txt && grep -qx JEVCC_MAIN=sonnet env.txt && grep -qx JEVCC_MODE=on env.txt && ! grep -q Stop args.txt`}
+	if res := r.Do(context.Background(), task, "sonnet/down/open", 1); !res.Pass || res.Model != "sonnet" {
+		t.Fatalf("down: %+v", res)
+	}
+	task.Check = `grep -qx haiku args.txt && grep -q Stop args.txt && ! grep -qx -- --no-session-persistence args.txt && ` +
+		`grep -qx JEVCC_DELEGATE=off env.txt && grep -qx JEVCC_ESCALATE=1 env.txt && grep -qx JEVCC_VERIFY=1 env.txt && grep -q '"tools"' args.txt`
+	if res := r.Do(context.Background(), task, "haiku/up", 1); !res.Pass {
+		t.Fatalf("up: %+v", res)
+	}
+	task.Check = `grep -qx opus args.txt && grep -qx JEVCC_MODE=off env.txt && ! grep -q -- --agents args.txt`
+	if res := r.Do(context.Background(), task, "opus/off", 1); !res.Pass {
+		t.Fatalf("off: %+v", res)
+	}
+}

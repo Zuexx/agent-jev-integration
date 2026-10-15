@@ -135,7 +135,6 @@ func Load() (*Config, error) {
 	envBool("JEVCC_GUARD", &c.Guard)
 	envBool("JEVCC_INJECTION", &c.Injection)
 	envBool("JEVCC_VERIFY", &c.Verify)
-	envBool("JEVCC_ESCALATE", &c.Escalate)
 	envBool("JEVCC_TRACE", &c.Trace)
 	if v := os.Getenv("JEVCC_MAIN"); v != "" {
 		c.MainModel = v
@@ -149,6 +148,9 @@ func Load() (*Config, error) {
 		f := false
 		c.Delegate, c.Escalate = false, &f
 	}
+	// Last, so it can override what JEVCC_DELEGATE implies (the bench's
+	// down-only and up-only arms).
+	envBool("JEVCC_ESCALATE", &c.Escalate)
 	c.fill()
 	return c, nil
 }
