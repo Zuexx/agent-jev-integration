@@ -2,6 +2,7 @@ package bench
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -67,4 +68,10 @@ func Done(rs []Run) map[string]bool {
 
 func JobKey(task, arm string, rep int) string {
 	return fmt.Sprintf("%s\x00%s\x00%d", task, arm, rep)
+}
+
+// Unreachable reports a run that failed because the API could not be reached
+// (DNS or network down), as opposed to a result about the task.
+func Unreachable(r Run) bool {
+	return r.Error != "" && r.ClaudeUSD == 0 && (strings.Contains(r.Error, "reach the API") || strings.Contains(r.Error, "ENOTFOUND"))
 }

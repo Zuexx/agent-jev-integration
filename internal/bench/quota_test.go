@@ -39,3 +39,12 @@ func TestDone(t *testing.T) {
 		t.Fatal(d)
 	}
 }
+
+func TestUnreachable(t *testing.T) {
+	if !Unreachable(Run{Error: "claude: success: API Error: Can't reach the API server — check your internet or DNS (ENOTFOUND)"}) {
+		t.Fatal("outage not detected")
+	}
+	if Unreachable(Run{Error: "claude: success: API Error: Can't reach the API server", ClaudeUSD: 0.2}) || Unreachable(Run{Error: "claude: error_max_turns: x"}) {
+		t.Fatal("a run that did work, or another error, is not an outage")
+	}
+}

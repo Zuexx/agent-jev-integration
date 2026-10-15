@@ -230,7 +230,7 @@ printf '%s\n' "$@" > args.txt
 env | grep '^JEVCC_' | sort > env.txt
 echo '{"total_cost_usd":0.1,"session_id":"S","is_error":false}'
 `), 0o755)
-	r := &Runner{Claude: fake, HookCmd: "jevcc hook", Agents: `{"jev-haiku":{"tools":["Read"]}}`, AgentsOpen: `{"jev-haiku":{}}`,
+	r := &Runner{Claude: fake, HookCmd: "jevcc hook", Agents: `{"jev-haiku":{"tools":["Read"]}}`, AgentsOpen: `{"jev-haiku":{}}`, Effort: "medium",
 		JevUse: func(string, string) JevUse { return JevUse{Decisions: 1} }}
 	task := Task{Name: "a", Dir: dir, Prompt: "p", TimeoutS: 30, Check: `grep -qx sonnet args.txt && grep -qx '{"jev-haiku":{}}' args.txt && ` +
 		`grep -qx JEVCC_DELEGATE=agent env.txt && grep -qx JEVCC_ESCALATE=0 env.txt && grep -qx JEVCC_MAIN=sonnet env.txt && grep -qx JEVCC_MODE=on env.txt && ! grep -q Stop args.txt`}
@@ -243,7 +243,7 @@ echo '{"total_cost_usd":0.1,"session_id":"S","is_error":false}'
 	if res := r.Do(context.Background(), task, "haiku/up", 1); !res.Pass {
 		t.Fatalf("up: %+v", res)
 	}
-	task.Check = `grep -qx opus args.txt && grep -qx JEVCC_MODE=off env.txt && ! grep -q -- --agents args.txt`
+	task.Check = `grep -qx opus args.txt && grep -qx JEVCC_MODE=off env.txt && ! grep -q -- --agents args.txt && grep -A1 -x -- --effort args.txt | grep -qx medium`
 	if res := r.Do(context.Background(), task, "opus/off", 1); !res.Pass {
 		t.Fatalf("off: %+v", res)
 	}

@@ -135,7 +135,7 @@ func (r *Runner) judgeOnce(ctx context.Context, prompt, rubric, dirA, dirB, mode
 	defer cancel()
 	cmd := exec.CommandContext(ctx, r.Claude, "-p", "--output-format", "json", "--no-session-persistence", "--strict-mcp-config",
 		"--allowedTools", "Read,Glob,Grep", "--disallowedTools", "Bash", "Edit", "Write", "WebSearch", "WebFetch", "Agent",
-		"--model", model, q)
+		"--effort", "high", "--model", model, q)
 	cmd.Dir = ev
 	cmd.Env = sb.env(os.Environ(), r.PassEnv)
 	out, err := cmd.Output()

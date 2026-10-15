@@ -291,6 +291,9 @@ type Runner struct {
 	// MCPServers are the MCP server configs tasks can ask for, by name.
 	MCPServers map[string]any
 	CacheDir   string // where Task.Cache entries live
+	// Effort is passed as --effort to every run (docs/eval-plan.md 4.1), so
+	// no arm depends on a model's or the CLI's default.
+	Effort string
 }
 
 // newWork copies the task's fixture into a fresh directory.
@@ -527,6 +530,9 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 		args = append(args, "--mcp-config", string(b))
 	}
 	agents, events := armAdds(args)
+	if r.Effort != "" {
+		args = append(args, "--effort", r.Effort)
+	}
 	args = append(args, "--model", res.Model, t.Prompt)
 	cmd := exec.CommandContext(ctx, r.Claude, args...)
 	cmd.Dir = work
@@ -565,6 +571,7 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 		SessionID  string  `json:"session_id"`
 		IsError    bool    `json:"is_error"`
 		Subtype    string  `json:"subtype"`
+		Result     string  `json:"result"`
 		Subagents  struct {
 			Spawned int `json:"spawned"`
 		} `json:"subagent_stats"`
@@ -574,7 +581,7 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 		return res
 	}
 	if cr.IsError {
-		res.Error = "claude: " + cr.Subtype
+		res.Error = "claude: " + cr.Subtype + ": " + tail(cr.Result, 200)
 	}
 	if len(res.Violations) > 0 {
 		res.Error = "isolation: " + strings.Join(res.Violations, "; ")

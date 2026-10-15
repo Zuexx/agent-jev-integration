@@ -628,6 +628,7 @@ func cmdBench(args []string) int {
 	allowPath := fset.String("allow", "bench/isolation-allow.json", "agents and skills a clean Claude Code loads by itself")
 	probe := fset.Bool("probe-allow", false, "run one clean isolated session and write what it loads to --allow, then exit")
 	cacheDir := fset.String("cache", filepath.Join(paths.Home(), ".jevcc-bench", "cache"), "where tasks' offline caches live (e.g. remotion node_modules)")
+	effort := fset.String("effort", "medium", "--effort for every run (low, medium, high, xhigh, max); medium is Claude Code's usual default")
 	validate := fset.Bool("validate", false, "check every task's check: fails on the fixture, passes with testdata/solution; no claude runs")
 	if err := fset.Parse(args); err != nil {
 		return 2
@@ -748,7 +749,7 @@ func cmdBench(args []string) int {
 		mcp["blender"] = map[string]any{"type": "stdio", "command": self, "args": []string{"blender-mcp"}, "env": map[string]string{"BLENDER": b}}
 	}
 	r := &bench.Runner{
-		Isolate: *isolate, Allow: allow, PassEnv: passEnv, MCPServers: mcp, CacheDir: *cacheDir,
+		Isolate: *isolate, Allow: allow, PassEnv: passEnv, MCPServers: mcp, CacheDir: *cacheDir, Effort: *effort,
 		Claude: claude, MainModel: *model, HookCmd: install.HookCommand(self), Agents: install.AgentsJSON(), AgentsOpen: install.AgentsJSONOpenTools(), MaxUSD: *maxUSD,
 		Pick: func(ctx context.Context, prompt string) (string, float64, error) {
 			d, err := decide(ctx, cfg, prompt, nil)
@@ -823,6 +824,17 @@ func cmdBench(args []string) int {
 		}
 		fmt.Fprintf(os.Stderr, "[%d/%d] %s %s #%d … ", i+1, len(jobs), j.Task.Name, j.Arm, j.Rep)
 		res := r.Do(context.Background(), j.Task, j.Arm, j.Rep)
+		// A network outage fails every run the same way; wait it out instead
+		// of burning through the queue (failed runs are redone on --resume).
+		for tries := 0; bench.Unreachable(res) && tries < 6; tries++ {
+			fmt.Fprintf(os.Stderr, "cannot reach the API; retrying in 5 minutes … ")
+			time.Sleep(5 * time.Minute)
+			res = r.Do(context.Background(), j.Task, j.Arm, j.Rep)
+		}
+		if bench.Unreachable(res) {
+			fmt.Fprintf(os.Stderr, "still unreachable; stopping. Continue later with --resume %s\n", rawPath)
+			goto report
+		}
 		if acct >= 0 {
 			res.Account = accounts[acct].name
 			gate.Observe(acct, res.Quota)
