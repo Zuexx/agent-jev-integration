@@ -131,6 +131,9 @@ type Run struct {
 	// outside the allow-list (such a run is an error, not a result).
 	ClaudeVersion string `json:"claude_version,omitempty"`
 	Quota         *Quota `json:"quota,omitempty"`
+	// Artifacts is where the files the run created or changed were kept,
+	// relative to the stream directory.
+	Artifacts string `json:"artifacts,omitempty"`
 	// Tools counts the tool calls by name (isolated runs).
 	Tools map[string]int `json:"tools,omitempty"`
 	// Metrics are the check's graded measures (METRIC lines).
@@ -245,6 +248,38 @@ func newWork(t Task) (string, error) {
 		}
 	}
 	return work, nil
+}
+
+// saveChanged copies the files in work that are new or differ from the
+// task's fixture into dst and returns how many it copied.
+func saveChanged(t Task, work, dst string) (int, error) {
+	n := 0
+	err := filepath.WalkDir(work, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == "node_modules" || d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel, _ := filepath.Rel(work, p)
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return nil
+		}
+		if old, err := os.ReadFile(filepath.Join(t.Dir, "fixture", rel)); err == nil && bytes.Equal(old, b) {
+			return nil
+		}
+		target := filepath.Join(dst, rel)
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		n++
+		return os.WriteFile(target, b, 0o644)
+	})
+	return n, err
 }
 
 // runCheck runs the task's check in work and returns whether it passed,
@@ -389,10 +424,10 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 	start := time.Now()
 	out, err := cmd.Output()
 	res.DurMS = time.Since(start).Milliseconds()
+	runName := fmt.Sprintf("%s_%s_%d_%d", t.Name, arm, rep, time.Now().UnixNano())
 	if r.Isolate {
 		if r.SaveDir != "" {
-			name := fmt.Sprintf("%s_%s_%d_%d.jsonl", t.Name, arm, rep, time.Now().UnixNano())
-			os.WriteFile(filepath.Join(r.SaveDir, name), out, 0o600)
+			os.WriteFile(filepath.Join(r.SaveDir, runName+".jsonl"), out, 0o600)
 		}
 		in, hooks, result := parseStream(out)
 		if in != nil {
@@ -446,6 +481,14 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 		// A clean sandbox with no record means the hook never ran.
 		if r.Isolate && u.Decisions == 0 && len(u.Errors) == 0 && res.Error == "" {
 			res.Error = "jev: the hook recorded nothing"
+		}
+	}
+	// Keep what the run produced, before the check adds its own files, for
+	// the judge and the human rating.
+	if r.SaveDir != "" {
+		dst := filepath.Join(r.SaveDir, "artifacts", runName)
+		if n, err := saveChanged(t, work, dst); err == nil && n > 0 {
+			res.Artifacts = filepath.Join("artifacts", runName)
 		}
 	}
 	var co string

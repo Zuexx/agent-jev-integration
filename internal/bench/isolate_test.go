@@ -103,6 +103,13 @@ echo '{"type":"result","total_cost_usd":0.25,"num_turns":2,"session_id":"S1","is
 	if b, _ := os.ReadFile(saved[0]); !strings.Contains(string(b), `"subtype":"init"`) {
 		t.Fatal(string(b))
 	}
+	// args.txt and env.txt are new files the run wrote: kept as artifacts.
+	if res.Artifacts == "" {
+		t.Fatal("no artifacts recorded")
+	}
+	if _, err := os.Stat(filepath.Join(streams, res.Artifacts, "env.txt")); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestValidate(t *testing.T) {
