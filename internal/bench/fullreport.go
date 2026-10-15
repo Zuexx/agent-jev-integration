@@ -63,10 +63,11 @@ func FullReport(in ReportInput) string {
 
 	// Per category and arm.
 	type cell struct {
-		runs, pass       int
-		cost             []float64
-		dur              []float64
-		jevErr, delegate int
+		runs, pass               int
+		cost                     []float64
+		dur                      []float64
+		jevErr                   int
+		up, down, review, rEdits int
 	}
 	cells := map[string]map[string]*cell{}
 	var cats, arms []string
@@ -97,11 +98,13 @@ func FullReport(in ReportInput) string {
 		x.cost = append(x.cost, r.TotalUSD())
 		x.dur = append(x.dur, float64(r.DurMS)/1000)
 		x.jevErr += len(r.JevErrors)
-		x.delegate += r.Tools["Agent"] + r.Tools["Task"]
+		k := SpawnKinds(r)
+		x.up, x.down, x.review, x.rEdits = x.up+k.Up, x.down+k.Down, x.review+k.Review, x.rEdits+k.ReviewEdits
 	}
 	sort.Strings(cats)
 	sort.Strings(arms)
-	b.WriteString("## Results by category and arm\n\n| category | arm | runs | pass | mean cost | cost per pass | mean time | delegations | Jev errors |\n|---|---|---|---|---|---|---|---|---|\n")
+	b.WriteString("## Results by category and arm\n\nSubagents started: up = a stronger jev-* agent, down = a cheaper one, review = jev-review after the turn (edits = files it changed, i.e. how much of the output the reviewer rewrote).\n\n")
+	b.WriteString("| category | arm | runs | pass | mean cost | cost per pass | mean time | up / down / review (edits) | Jev errors |\n|---|---|---|---|---|---|---|---|---|\n")
 	for _, c := range cats {
 		for _, a := range arms {
 			x := cells[c][a]
@@ -112,7 +115,7 @@ func FullReport(in ReportInput) string {
 			if x.pass > 0 {
 				perPass = fmt.Sprintf("$%.3f", sum(x.cost)/float64(x.pass))
 			}
-			fmt.Fprintf(&b, "| %s | %s | %d | %s | $%.3f | %s | %.0fs | %d | %d |\n", c, a, x.runs, passRate(x.pass, x.runs), mean(x.cost), perPass, mean(x.dur), x.delegate, x.jevErr)
+			fmt.Fprintf(&b, "| %s | %s | %d | %s | $%.3f | %s | %.0fs | %d / %d / %d (%d) | %d |\n", c, a, x.runs, passRate(x.pass, x.runs), mean(x.cost), perPass, mean(x.dur), x.up, x.down, x.review, x.rEdits, x.jevErr)
 		}
 	}
 
@@ -354,4 +357,35 @@ func JudgeHumanAgreement(vs []Verdict, rs []Rating, tasks map[string]Task) (agre
 		return po, n, 1
 	}
 	return po, n, (po - pe) / (1 - pe)
+}
+
+// Spawned is what kinds of subagents a run started, relative to its lead.
+type Spawned struct{ Up, Down, Review, ReviewEdits, Other int }
+
+var tierRank = map[string]int{"haiku": 0, "sonnet": 1, "opus": 2}
+
+// SpawnKinds classifies a run's subagents: jev-<tier> above the lead's tier
+// is up, below is down; jev-review is the post-turn review, and its Edit and
+// Write calls are counted as the files it changed.
+func SpawnKinds(r Run) Spawned {
+	var k Spawned
+	lead, _, _, _ := ParseLeadArm(r.Arm)
+	if lead == "" {
+		lead = r.Model
+	}
+	for t, n := range r.Spawns {
+		tier := strings.TrimPrefix(t, "jev-")
+		switch {
+		case t == "jev-review":
+			k.Review += n
+		case strings.HasPrefix(t, "jev-") && tierRank[tier] > tierRank[lead]:
+			k.Up += n
+		case strings.HasPrefix(t, "jev-") && tierRank[tier] < tierRank[lead]:
+			k.Down += n
+		default:
+			k.Other += n
+		}
+	}
+	k.ReviewEdits = r.SubagentTools["jev-review/Edit"] + r.SubagentTools["jev-review/Write"] + r.SubagentTools["jev-review/MultiEdit"]
+	return k
 }

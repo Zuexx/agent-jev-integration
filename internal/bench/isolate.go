@@ -52,7 +52,8 @@ func (s sandbox) env(base, extra []string) []string {
 			}
 		}
 	}
-	out = append(out, "HOME="+s.Home, "CLAUDE_CONFIG_DIR="+s.ConfigDir, "JEVCC_HOME="+s.JevHome)
+	// No self-updates mid-evaluation: runs must share one Claude Code version.
+	out = append(out, "HOME="+s.Home, "CLAUDE_CONFIG_DIR="+s.ConfigDir, "JEVCC_HOME="+s.JevHome, "DISABLE_AUTOUPDATER=1")
 	return append(out, extra...)
 }
 
@@ -146,17 +147,31 @@ func parseQuota(out []byte) *Quota {
 	return q
 }
 
-// toolUses counts the tools the session called, by name (Agent/Task calls
-// are delegations; mcp__<server>__<tool> are MCP calls).
-func toolUses(out []byte) map[string]int {
-	n := map[string]int{}
+// ToolUse splits a session's tool calls by who made them.
+type ToolUse struct {
+	Main     map[string]int // the lead session's calls, by tool name
+	Spawns   map[string]int // subagents it started, by subagent_type
+	Subagent map[string]int // subagents' calls, keyed "<subagent_type>/<tool>"
+}
+
+// toolUses reads the tool calls from stream-json output. A subagent's
+// messages carry parent_tool_use_id, the id of the Agent call that started
+// it, which names its subagent_type.
+func toolUses(out []byte) ToolUse {
+	u := ToolUse{Main: map[string]int{}, Spawns: map[string]int{}, Subagent: map[string]int{}}
+	spawnType := map[string]string{}
 	for _, line := range bytes.Split(out, []byte("\n")) {
 		var e struct {
 			Type    string `json:"type"`
+			Parent  string `json:"parent_tool_use_id"`
 			Message struct {
 				Content []struct {
-					Type string `json:"type"`
-					Name string `json:"name"`
+					Type  string `json:"type"`
+					ID    string `json:"id"`
+					Name  string `json:"name"`
+					Input struct {
+						SubagentType string `json:"subagent_type"`
+					} `json:"input"`
 				} `json:"content"`
 			} `json:"message"`
 		}
@@ -164,12 +179,29 @@ func toolUses(out []byte) map[string]int {
 			continue
 		}
 		for _, c := range e.Message.Content {
-			if c.Type == "tool_use" {
-				n[c.Name]++
+			if c.Type != "tool_use" {
+				continue
+			}
+			if e.Parent != "" {
+				who := spawnType[e.Parent]
+				if who == "" {
+					who = "subagent"
+				}
+				u.Subagent[who+"/"+c.Name]++
+				continue
+			}
+			u.Main[c.Name]++
+			if c.Name == "Agent" || c.Name == "Task" {
+				t := c.Input.SubagentType
+				if t == "" {
+					t = "general-purpose"
+				}
+				spawnType[c.ID] = t
+				u.Spawns[t]++
 			}
 		}
 	}
-	return n
+	return u
 }
 
 // parseStream splits stream-json output into the init event, the names of

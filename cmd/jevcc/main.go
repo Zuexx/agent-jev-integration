@@ -628,6 +628,7 @@ func cmdBench(args []string) int {
 	allowPath := fset.String("allow", "bench/isolation-allow.json", "agents and skills a clean Claude Code loads by itself")
 	probe := fset.Bool("probe-allow", false, "run one clean isolated session and write what it loads to --allow, then exit")
 	cacheDir := fset.String("cache", filepath.Join(paths.Home(), ".jevcc-bench", "cache"), "where tasks' offline caches live (e.g. remotion node_modules)")
+	claudeBin := fset.String("claude", "", "Claude Code binary (default: `claude` on PATH resolved to its versioned file, so an update mid-run cannot change it)")
 	effort := fset.String("effort", "medium", "--effort for every run (low, medium, high, xhigh, max); medium is Claude Code's usual default")
 	validate := fset.Bool("validate", false, "check every task's check: fails on the fixture, passes with testdata/solution; no claude runs")
 	if err := fset.Parse(args); err != nil {
@@ -687,14 +688,15 @@ func cmdBench(args []string) int {
 	if err != nil {
 		return fail(err)
 	}
-	claude, err := exec.LookPath("claude")
+	claude, err := pinnedClaude(*claudeBin)
 	if err != nil {
-		return fail(errors.New("claude not found on PATH"))
+		return fail(err)
 	}
 	self, err := os.Executable()
 	if err != nil {
 		return fail(err)
 	}
+	fmt.Fprintf(os.Stderr, "claude: %s\njevcc: %s\n", claude, self)
 	var passEnv []string
 	var allow bench.Allow
 	// accounts holds one credential per subscription account, in order of use.
@@ -835,6 +837,7 @@ func cmdBench(args []string) int {
 			fmt.Fprintf(os.Stderr, "still unreachable; stopping. Continue later with --resume %s\n", rawPath)
 			goto report
 		}
+		res.Build = filepath.Base(self)
 		if acct >= 0 {
 			res.Account = accounts[acct].name
 			gate.Observe(acct, res.Quota)
@@ -1472,9 +1475,9 @@ func cmdJudge(args []string) int {
 	if token == "" {
 		return fail(errors.New("the judge runs isolated: pass --token-file"))
 	}
-	claude, err := exec.LookPath("claude")
+	claude, err := pinnedClaude("")
 	if err != nil {
-		return fail(errors.New("claude not found on PATH"))
+		return fail(err)
 	}
 	r := &bench.Runner{Claude: claude, PassEnv: []string{"CLAUDE_CODE_OAUTH_TOKEN=" + token}}
 	streams := strings.TrimSuffix(*runsPath, ".jsonl") + "-streams"
@@ -1636,4 +1639,17 @@ func cmdReport(args []string) int {
 	fmt.Println(md)
 	fmt.Fprintln(os.Stderr, "wrote", out)
 	return 0
+}
+
+// pinnedClaude resolves the Claude Code binary to its real, versioned file
+// (~/.local/bin/claude is a symlink an update re-points).
+func pinnedClaude(flagValue string) (string, error) {
+	p := flagValue
+	if p == "" {
+		var err error
+		if p, err = exec.LookPath("claude"); err != nil {
+			return "", errors.New("claude not found on PATH")
+		}
+	}
+	return filepath.EvalSymlinks(p)
 }

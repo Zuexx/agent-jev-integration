@@ -13,7 +13,7 @@ func TestSandboxEnvDropsEvaluatorSetup(t *testing.T) {
 	sb := sandbox{Root: "/sb", Home: "/sb/home", ConfigDir: "/sb/home/.claude", JevHome: "/sb/jevcc"}
 	base := []string{"PATH=/bin", "HOME=/Users/me", "CLAUDE_CONFIG_DIR=/Users/me/.claude", "JEVCC_HOME=/Users/me/.jevcc", "ANTHROPIC_MODEL=opus", "BLENDER=/b"}
 	env := strings.Join(sb.env(base, []string{"CLAUDE_CODE_OAUTH_TOKEN=tok"}), "\n")
-	for _, want := range []string{"PATH=/bin", "HOME=/sb/home", "CLAUDE_CONFIG_DIR=/sb/home/.claude", "JEVCC_HOME=/sb/jevcc", "BLENDER=/b", "CLAUDE_CODE_OAUTH_TOKEN=tok"} {
+	for _, want := range []string{"PATH=/bin", "HOME=/sb/home", "CLAUDE_CONFIG_DIR=/sb/home/.claude", "JEVCC_HOME=/sb/jevcc", "BLENDER=/b", "CLAUDE_CODE_OAUTH_TOKEN=tok", "DISABLE_AUTOUPDATER=1"} {
 		if !strings.Contains(env+"\n", want+"\n") {
 			t.Errorf("missing %s in\n%s", want, env)
 		}
@@ -164,11 +164,16 @@ echo '{"type":"result","total_cost_usd":0.1,"session_id":"S","is_error":false}'
 
 func TestToolUses(t *testing.T) {
 	out := `{"type":"assistant","message":{"content":[{"type":"text"},{"type":"tool_use","name":"mcp__blender__render"}]}}
-{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Agent"},{"type":"tool_use","name":"mcp__blender__render"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Agent","input":{"subagent_type":"jev-review"}},{"type":"tool_use","name":"mcp__blender__render"}]}}
+{"type":"assistant","parent_tool_use_id":"t1","message":{"content":[{"type":"tool_use","name":"Edit"},{"type":"tool_use","name":"Edit"}]}}
+{"type":"assistant","parent_tool_use_id":"unknown","message":{"content":[{"type":"tool_use","name":"Read"}]}}
 {"type":"user","message":{"content":[{"type":"tool_result"}]}}`
-	n := toolUses([]byte(out))
-	if n["mcp__blender__render"] != 2 || n["Agent"] != 1 || len(n) != 2 {
-		t.Fatal(n)
+	u := toolUses([]byte(out))
+	if u.Main["mcp__blender__render"] != 2 || u.Main["Agent"] != 1 || len(u.Main) != 2 {
+		t.Fatal(u.Main)
+	}
+	if u.Spawns["jev-review"] != 1 || u.Subagent["jev-review/Edit"] != 2 || u.Subagent["subagent/Read"] != 1 {
+		t.Fatal(u.Spawns, u.Subagent)
 	}
 }
 

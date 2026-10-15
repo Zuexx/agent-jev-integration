@@ -171,13 +171,18 @@ type Run struct {
 	// Isolated runs only: what Claude Code reported loading, and anything
 	// outside the allow-list (such a run is an error, not a result).
 	ClaudeVersion string `json:"claude_version,omitempty"`
-	Account       string `json:"account,omitempty"` // which subscription token ran it
+	Account       string `json:"account,omitempty"`     // which subscription token ran it
+	Build         string `json:"jevcc_build,omitempty"` // the jevcc binary that ran the hook
 	Quota         *Quota `json:"quota,omitempty"`
 	// Artifacts is where the files the run created or changed were kept,
 	// relative to the stream directory.
 	Artifacts string `json:"artifacts,omitempty"`
-	// Tools counts the tool calls by name (isolated runs).
-	Tools map[string]int `json:"tools,omitempty"`
+	// Tools counts the lead session's tool calls by name, Spawns the
+	// subagents it started by type, SubagentTools their calls as
+	// "<type>/<tool>" (isolated runs).
+	Tools         map[string]int `json:"tools,omitempty"`
+	Spawns        map[string]int `json:"spawns,omitempty"`
+	SubagentTools map[string]int `json:"subagent_tools,omitempty"`
 	// Metrics are the check's graded measures (METRIC lines).
 	Metrics    map[string]float64 `json:"metrics,omitempty"`
 	Violations []string           `json:"isolation_violations,omitempty"`
@@ -559,7 +564,8 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 		allow := r.Allow
 		allow.Skills = append(append([]string{}, allow.Skills...), t.Skills...)
 		allow.MCP = append(append([]string{}, allow.MCP...), t.MCP...)
-		res.Tools = toolUses(out)
+		tu := toolUses(out)
+		res.Tools, res.Spawns, res.SubagentTools = tu.Main, tu.Spawns, tu.Subagent
 		res.Violations = checkIsolation(in, hooks, sb, allow, agents, events)
 		res.Quota = parseQuota(out)
 		out = result
