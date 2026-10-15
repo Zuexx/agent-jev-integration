@@ -296,3 +296,6 @@ Q3 → 往下派工是否預設開啟；Q4 → D3（`jev-*` 的工具設定）�
     這類題目的比較主要靠評審與人工評分，確定性檢查只當門檻。
 - 2026-10-15：新增第 12 節「結果怎麼用來改 jevcc」（依據寫進 decisions.md、改動以沒看過的新題目驗證、原題目只當回歸檢查）。
   寫於任何正式執行之前；當時只有試跑資料。
+- 2026-10-15：**試跑發現的檢查錯誤（修正於正式執行前）**：research-outage 只說「寫 findings.md」，haiku 寫在
+  `incident/findings.md`、內容正確卻被判失敗。題目沒指定位置，屬檢查過嚴；只給檔名的四題（research-outage、research-mq、
+  plan-ci-migration、plan-onboarding）改為在工作目錄任何位置找該檔。判定內容的條件不變。

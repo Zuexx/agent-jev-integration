@@ -3,9 +3,13 @@ real plan (>= 150 words). The point of the task is whether the plan finds
 the actual problem in the data, which the METRIC lines measure."""
 import os, re, sys
 
-if not os.path.exists("plan.md"):
+sys.path.insert(0, os.path.join(os.environ["TASK_DIR"], "..", "_lib"))
+from find_output import find_output
+
+path = find_output("plan.md")
+if not path:
     sys.exit("no plan.md")
-t = open("plan.md", encoding="utf-8").read()
+t = open(path, encoding="utf-8").read()
 low = t.lower()
 words = len(re.findall(r"\w+", t))
 def near(a, b, n=200):

@@ -3,9 +3,13 @@ risk sections and names at least two of the five hidden constraints. METRIC
 lines count every constraint the plan handles."""
 import os, re, sys
 
-if not os.path.exists("plan.md"):
+sys.path.insert(0, os.path.join(os.environ["TASK_DIR"], "..", "_lib"))
+from find_output import find_output
+
+path = find_output("plan.md")
+if not path:
     sys.exit("no plan.md")
-t = open("plan.md", encoding="utf-8").read()
+t = open(path, encoding="utf-8").read()
 low = t.lower()
 heads = " ".join(re.findall(r"^#+\s*(.+)$", t, re.M)).lower()
 sections = all(k in heads for k in ("milestone", "risk", "depend"))

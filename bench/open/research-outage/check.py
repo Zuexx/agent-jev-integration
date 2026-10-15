@@ -4,9 +4,13 @@ whether it refutes the draft's deploy theory, dismisses the DB spike, names
 the missed expiry warnings, and gives the recovery time."""
 import os, re, sys
 
-if not os.path.exists("findings.md"):
+sys.path.insert(0, os.path.join(os.environ["TASK_DIR"], "..", "_lib"))
+from find_output import find_output
+
+path = find_output("findings.md")
+if not path:
     sys.exit("no findings.md")
-t = open("findings.md", encoding="utf-8").read()
+t = open(path, encoding="utf-8").read()
 low = t.lower()
 cert = bool(re.search(r"(certificate|cert\b|x509|tls)", low)) and bool(re.search(r"expir", low))
 start = "09:00" in t

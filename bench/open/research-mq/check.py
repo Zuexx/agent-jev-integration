@@ -6,9 +6,13 @@ import os, re, sys
 def norm(s):
     return re.sub(r"\s+", " ", s.replace("’", "'").replace("**", "")).strip().lower()
 
-if not os.path.exists("answer.md"):
+sys.path.insert(0, os.path.join(os.environ["TASK_DIR"], "..", "_lib"))
+from find_output import find_output
+
+path = find_output("answer.md")
+if not path:
     sys.exit("no answer.md")
-text = open("answer.md", encoding="utf-8").read()
+text = open(path, encoding="utf-8").read()
 corpus = {f: norm(open(os.path.join("corpus", f), encoding="utf-8").read()) for f in os.listdir("corpus")}
 
 rec = re.search(r"^\s*\**Recommendation\**\s*:\s*(.+)$", text, re.M | re.I)
