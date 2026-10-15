@@ -38,6 +38,7 @@ type RateItem struct {
 // RateFile is one artifact shown on the page.
 type RateFile struct {
 	Name, Kind, Src, Text string // Kind: text, image, video
+	Markdown              bool   // render as formatted text
 }
 
 // RateKeyEntry maps a blinded id back to its run.
@@ -141,7 +142,7 @@ func WriteRatingPage(dir, streams string, sample []Run, tasks map[string]Task) e
 				it.Files = append(it.Files, RateFile{Name: rel, Kind: "video", Src: media(p, rel)})
 			case ".md", ".txt", ".csv", ".json", ".go", ".ts", ".tsx", ".py", ".yaml", ".yml":
 				if b, err := os.ReadFile(p); err == nil && len(b) < 200_000 {
-					it.Files = append(it.Files, RateFile{Name: rel, Kind: "text", Text: string(b)})
+					it.Files = append(it.Files, RateFile{Name: rel, Kind: "text", Text: string(b), Markdown: ext == ".md"})
 				}
 			}
 			return nil
@@ -193,6 +194,10 @@ img,video{max-width:100%;border-radius:8px;border:1px solid var(--line);display:
 .fname{font:12px ui-monospace,Menlo,monospace;color:var(--muted);margin-top:10px}
 label.opt{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin:6px 0;cursor:pointer}
 label.opt:has(input:checked){background:var(--pick);border-color:var(--accent)}
+.md{border:1px solid var(--line);border-radius:8px;padding:4px 16px;max-height:640px;overflow:auto;background:var(--card)}
+.md table{border-collapse:collapse;margin:8px 0;font-size:14px}.md th,.md td{border:1px solid var(--line);padding:4px 8px;text-align:left}
+.md code{font:13px ui-monospace,Menlo,monospace;background:var(--bg);padding:1px 4px;border-radius:4px}.md blockquote{margin:8px 0;padding-left:12px;border-left:3px solid var(--line);color:var(--muted)}
+.md h1{font-size:20px}.md h2{font-size:18px}.md h3{font-size:16px}
 textarea{width:100%;min-height:56px;font:inherit;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px}
 </style></head><body>
 <header><h1>盲評：成品評分</h1><span id="progress"></span><button id="export">匯出 ratings.json</button></header>
@@ -201,13 +206,41 @@ textarea{width:100%;min-height:56px;font:inherit;background:var(--bg);color:var(
 {{range .}}<section class="item" data-id="{{.ID}}">
 <h2>{{.ID}}</h2>
 <details><summary>當時給的題目（英文原文）</summary><pre>{{.Prompt}}</pre></details>
-{{range .Files}}<div class="fname">{{.Name}}</div>{{if eq .Kind "image"}}<img loading="lazy" src="{{.Src}}" alt="{{.Name}}">{{else if eq .Kind "video"}}<video controls preload="metadata" src="{{.Src}}"></video>{{else}}<pre>{{.Text}}</pre>{{end}}{{end}}
+{{range .Files}}<div class="fname">{{.Name}}</div>{{if eq .Kind "image"}}<img loading="lazy" src="{{.Src}}" alt="{{.Name}}">{{else if eq .Kind "video"}}<video controls preload="metadata" src="{{.Src}}"></video>{{else if .Markdown}}<div class="md" data-text="{{.Text}}"></div><details><summary>原始文字</summary><pre>{{.Text}}</pre></details>{{else}}<pre>{{.Text}}</pre>{{end}}{{end}}
 <div class="q">{{.Scale.Question}}</div>
 {{$id := .ID}}{{range .Scale.Options}}<label class="opt"><input type="radio" name="{{$id}}" value="{{.Score}}"><span><b>{{.Score}}</b>　{{.Label}}</span></label>{{end}}
 <textarea placeholder="備註（選填）" data-note="{{.ID}}"></textarea>
 </section>{{end}}
 </main>
 <script>
+// A small offline Markdown renderer: headings, lists, tables, quotes, code
+// blocks, bold, italics and inline code. Text is escaped first.
+const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const inline = s => esc(s).replace(/\x60([^\x60]+)\x60/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<i>$2</i>");
+function md(src) {
+  const lines = src.split("\n"), out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (/^\x60\x60\x60/.test(l)) { const b = []; while (++i < lines.length && !/^\x60\x60\x60/.test(lines[i])) b.push(lines[i]); out.push("<pre>" + esc(b.join("\n")) + "</pre>"); continue; }
+    let m;
+    if ((m = l.match(/^(#{1,6})\s+(.*)$/))) { out.push("<h" + Math.min(m[1].length + 0, 6) + ">" + inline(m[2]) + "</h" + Math.min(m[1].length, 6) + ">"); continue; }
+    if (/^\s*\|.*\|\s*$/.test(l) && i + 1 < lines.length && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i + 1])) {
+      const cells = r => r.trim().replace(/^\||\|$/g, "").split("|").map(c => inline(c.trim()));
+      let t = "<table><tr>" + cells(l).map(c => "<th>" + c + "</th>").join("") + "</tr>"; i++;
+      while (i + 1 < lines.length && /^\s*\|/.test(lines[i + 1])) { i++; t += "<tr>" + cells(lines[i]).map(c => "<td>" + c + "</td>").join("") + "</tr>"; }
+      out.push(t + "</table>"); continue;
+    }
+    if ((m = l.match(/^\s*([-*]|\d+\.)\s+(.*)$/))) {
+      const tag = /\d/.test(m[1]) ? "ol" : "ul"; let t = "<" + tag + "><li>" + inline(m[2]) + "</li>";
+      while (i + 1 < lines.length && (m = lines[i + 1].match(/^\s*([-*]|\d+\.)\s+(.*)$/))) { i++; t += "<li>" + inline(m[2]) + "</li>"; }
+      out.push(t + "</" + tag + ">"); continue;
+    }
+    if ((m = l.match(/^>\s?(.*)$/))) { out.push("<blockquote>" + inline(m[1]) + "</blockquote>"); continue; }
+    if (l.trim()) out.push("<p>" + inline(l) + "</p>");
+  }
+  return out.join("\n");
+}
+document.querySelectorAll(".md").forEach(el => { el.innerHTML = md(el.dataset.text); });
 const KEY = "jevcc-rate:" + location.pathname;
 let state = {};
 try { state = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) {}
