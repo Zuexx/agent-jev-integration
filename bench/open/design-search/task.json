@@ -1,0 +1,8 @@
+{
+ "category": "design",
+ "variant": "vague",
+ "prompt": "Users keep complaining that search is bad. Work out what we should do about it and write the design to docs/search-design.md.",
+ "check": "python3 -I \"$TASK_DIR/check.py\"",
+ "tier": "opus",
+ "timeout_s": 600
+}
