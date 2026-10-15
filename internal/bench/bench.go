@@ -171,6 +171,7 @@ type Run struct {
 	// Isolated runs only: what Claude Code reported loading, and anything
 	// outside the allow-list (such a run is an error, not a result).
 	ClaudeVersion string `json:"claude_version,omitempty"`
+	Account       string `json:"account,omitempty"` // which subscription token ran it
 	Quota         *Quota `json:"quota,omitempty"`
 	// Artifacts is where the files the run created or changed were kept,
 	// relative to the stream directory.
@@ -183,6 +184,26 @@ type Run struct {
 }
 
 func (r Run) TotalUSD() float64 { return r.ClaudeUSD + r.JevUSD }
+
+// LoadRuns reads a bench-*.jsonl results file.
+func LoadRuns(path string) ([]Run, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var out []Run
+	for _, line := range bytes.Split(b, []byte("\n")) {
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		var r Run
+		if err := json.Unmarshal(line, &r); err != nil {
+			return out, fmt.Errorf("%s: %w", path, err)
+		}
+		out = append(out, r)
+	}
+	return out, nil
+}
 
 // JevUse is the hook's own record of one session.
 type JevUse struct {

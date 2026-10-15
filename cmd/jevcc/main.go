@@ -618,7 +618,10 @@ func cmdBench(args []string) int {
 	seed := fset.Int64("seed", 1, "run order seed")
 	dry := fset.Bool("dry-run", false, "list the planned runs and exit")
 	isolate := fset.Bool("isolate", true, "run each claude in a throwaway HOME / CLAUDE_CONFIG_DIR / JEVCC_HOME (docs/eval-plan.md 4.1)")
-	tokenFile := fset.String("token-file", "", "file holding a `claude setup-token` token for isolated runs (else $CLAUDE_CODE_OAUTH_TOKEN)")
+	tokenFile := fset.String("token-file", "", "comma-separated files holding `claude setup-token` tokens, one per account, used in order (else $CLAUDE_CODE_OAUTH_TOKEN)")
+	max7d := fset.Float64("max-7d", 0.70, "stop using an account once its 7-day quota reaches this (docs/eval-plan.md 9.2)")
+	max5h := fset.Float64("max-5h", 0.95, "wait for the 5-hour reset once an account reaches this")
+	resume := fset.String("resume", "", "a previous bench-*.jsonl: skip runs that finished there and append to it")
 	allowPath := fset.String("allow", "bench/isolation-allow.json", "agents and skills a clean Claude Code loads by itself")
 	probe := fset.Bool("probe-allow", false, "run one clean isolated session and write what it loads to --allow, then exit")
 	cacheDir := fset.String("cache", filepath.Join(paths.Home(), ".jevcc-bench", "cache"), "where tasks' offline caches live (e.g. remotion node_modules)")
@@ -690,19 +693,24 @@ func cmdBench(args []string) int {
 	}
 	var passEnv []string
 	var allow bench.Allow
+	// accounts holds one credential per subscription account, in order of use.
+	type account struct{ name, env string }
+	var accounts []account
 	if *isolate || *probe {
-		token := os.Getenv("CLAUDE_CODE_OAUTH_TOKEN")
 		if *tokenFile != "" {
-			b, err := os.ReadFile(*tokenFile)
-			if err != nil {
-				return fail(err)
+			for _, f := range strings.Split(*tokenFile, ",") {
+				b, err := os.ReadFile(f)
+				if err != nil {
+					return fail(err)
+				}
+				accounts = append(accounts, account{strings.TrimSuffix(filepath.Base(f), ".token"), "CLAUDE_CODE_OAUTH_TOKEN=" + strings.TrimSpace(string(b))})
 			}
-			token = strings.TrimSpace(string(b))
+		} else if t := os.Getenv("CLAUDE_CODE_OAUTH_TOKEN"); t != "" {
+			accounts = append(accounts, account{"env", "CLAUDE_CODE_OAUTH_TOKEN=" + t})
 		}
-		if token == "" {
+		if len(accounts) == 0 {
 			return fail(errors.New("isolated runs cannot use your login: pass --token-file (see `claude setup-token`) or set CLAUDE_CODE_OAUTH_TOKEN"))
 		}
-		passEnv = append(passEnv, "CLAUDE_CODE_OAUTH_TOKEN="+token)
 		// The hook inside the sandbox has no config file; give it the key.
 		if cfg.APIKey != "" {
 			passEnv = append(passEnv, "TYPESAFE_API_KEY="+cfg.APIKey)
@@ -712,7 +720,7 @@ func cmdBench(args []string) int {
 		}
 	}
 	if *probe {
-		pr := &bench.Runner{Claude: claude, PassEnv: passEnv}
+		pr := &bench.Runner{Claude: claude, PassEnv: append(passEnv, accounts[0].env)}
 		a, violations, err := pr.ProbeAllow(context.Background())
 		if err != nil {
 			return fail(err)
@@ -774,14 +782,48 @@ func cmdBench(args []string) int {
 	stamp := time.Now().Format("20060102-150405")
 	os.MkdirAll(*outDir, 0o755)
 	rawPath := filepath.Join(*outDir, "bench-"+stamp+".jsonl")
+	var runs []bench.Run
+	done := map[string]bool{}
+	if *resume != "" {
+		rawPath = *resume
+		prev, err := bench.LoadRuns(rawPath)
+		if err != nil {
+			return fail(err)
+		}
+		runs, done = prev, bench.Done(prev)
+	}
 	if *isolate {
-		r.SaveDir = filepath.Join(*outDir, "bench-"+stamp+"-streams")
+		r.SaveDir = strings.TrimSuffix(rawPath, ".jsonl") + "-streams"
 		os.MkdirAll(r.SaveDir, 0o755)
 	}
-	var runs []bench.Run
+	gate := &bench.QuotaGate{Max7d: *max7d, Max5h: *max5h, Accounts: max(len(accounts), 1)}
 	for i, j := range jobs {
+		if done[bench.JobKey(j.Task.Name, j.Arm, j.Rep)] {
+			continue
+		}
+		acct := -1
+		if len(accounts) > 0 {
+			for {
+				a, wait, finished := gate.Next(time.Now())
+				if finished {
+					fmt.Fprintf(os.Stderr, "every account reached %.0f%% of its 7-day quota; continue later with --resume %s\n", *max7d*100, rawPath)
+					goto report
+				}
+				if a >= 0 {
+					acct = a
+					break
+				}
+				fmt.Fprintf(os.Stderr, "all accounts near their 5-hour limit; waiting %s\n", wait.Round(time.Minute))
+				time.Sleep(wait + 30*time.Second)
+			}
+			r.PassEnv = append(append([]string{}, passEnv...), accounts[acct].env)
+		}
 		fmt.Fprintf(os.Stderr, "[%d/%d] %s %s #%d … ", i+1, len(jobs), j.Task.Name, j.Arm, j.Rep)
 		res := r.Do(context.Background(), j.Task, j.Arm, j.Rep)
+		if acct >= 0 {
+			res.Account = accounts[acct].name
+			gate.Observe(acct, res.Quota)
+		}
 		runs = append(runs, res)
 		fsutil.AppendJSONL(rawPath, res)
 		status := "FAIL"
@@ -793,6 +835,7 @@ func cmdBench(args []string) int {
 		}
 		fmt.Fprintf(os.Stderr, "%s, $%.4f, %.0fs (%s)\n", status, res.TotalUSD(), float64(res.DurMS)/1000, res.Model)
 	}
+report:
 	md := bench.Report(runs, arms)
 	mdPath := filepath.Join(*outDir, "bench-"+stamp+".md")
 	os.WriteFile(mdPath, []byte(md+"\n"), 0o644)
