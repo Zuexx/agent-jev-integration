@@ -1,6 +1,6 @@
 # jevcc
 
-先讀 `docs/handoff.md`：上一個 session 留下的決定、已知問題和待討論的點子。設計與限制見 `docs/design.md`，用法見 `README.md`。
+先讀 `docs/handoff.md`：上一個 session 留下的決定、已知問題和待討論的點子。決定與討論的經過記在 `docs/decisions.md`（只增不刪）；做了新決定或重要討論就加一條。設計與限制見 `docs/design.md`，用法見 `README.md`。
 
 - 回覆使用者用繁體中文。
 - 開發檢查：`gofmt -l . && go vet ./... && go test ./...`
