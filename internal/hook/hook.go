@@ -305,6 +305,13 @@ func Features(cfg *config.Config, in Input) []Feature {
 	}
 }
 
+// modelSwitch is what /model writes to the transcript, e.g.
+// "<local-command-stdout>Set model to `Opus 5.5` and saved as ...".
+const modelSwitch = "<local-command-stdout>Set model to "
+
+// lastModel is the model of the newest assistant message, or the target of a
+// later /model switch: that line lands before the next prompt's hook runs,
+// while the first reply from the new model only comes after it.
 func lastModel(transcript string) string {
 	b, err := os.ReadFile(transcript)
 	if err != nil {
@@ -312,6 +319,24 @@ func lastModel(transcript string) string {
 	}
 	lines := strings.Split(string(b), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.Contains(lines[i], modelSwitch) {
+			var l struct {
+				Type    string `json:"type"`
+				Message struct {
+					Content any `json:"content"`
+				} `json:"message"`
+			}
+			if json.Unmarshal([]byte(lines[i]), &l) == nil && l.Type == "user" {
+				if s, ok := l.Message.Content.(string); ok {
+					if _, after, ok := strings.Cut(s, modelSwitch); ok {
+						m, _, _ := strings.Cut(after, " and ")
+						m, _, _ = strings.Cut(m, "</local-command-stdout>")
+						return strings.Trim(m, "` ")
+					}
+				}
+			}
+			continue
+		}
 		if !strings.Contains(lines[i], `"assistant"`) {
 			continue
 		}
