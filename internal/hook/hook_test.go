@@ -143,6 +143,15 @@ func TestSessionTier(t *testing.T) {
 	if got := SessionTier(Input{TranscriptPath: tr}, cfg); got != "haiku" {
 		t.Fatal("transcript", got)
 	}
+	// A /model switch shows up before any reply from the new model.
+	f, _ := os.OpenFile(tr, os.O_APPEND|os.O_WRONLY, 0)
+	f.WriteString(`{"type":"user","message":{"role":"user","content":"<command-name>/model</command-name>"}}
+{"type":"user","message":{"role":"user","content":"<local-command-stdout>Set model to ` + "`Opus 5.5`" + ` and saved as your default for new sessions</local-command-stdout>"}}
+`)
+	f.Close()
+	if got := SessionTier(Input{TranscriptPath: tr}, cfg); got != "opus" {
+		t.Fatal("after /model", got)
+	}
 	os.MkdirAll(filepath.Join(dir, ".claude"), 0o755)
 	os.WriteFile(filepath.Join(dir, ".claude", "settings.json"), []byte(`{"model":"sonnet"}`), 0o600)
 	if got := SessionTier(Input{Cwd: dir}, cfg); got != "sonnet" {

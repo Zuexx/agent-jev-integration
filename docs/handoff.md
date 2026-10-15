@@ -29,8 +29,6 @@
 
 ### 已知問題（未修）
 
-- 用 `/model` 切換後的第一句，hook 從 transcript 讀到的仍是舊模型（`internal/hook/hook.go` 的 `lastModel`），
-  會給出錯誤的升級建議（例如主對話已是 opus，卻叫它派 jev-opus）。
 - `jev-*` subagent 的 `tools` 寫死為 `Read, Grep, Glob, Bash, Edit, Write`（`internal/install/agents/`）：
   拿不到 MCP 工具，也不能問使用者。升級去做 MCP 工作反而做不了。
 - Stop review 只在改了程式碼時才跑（`not_code` 跳過）。影片、文件等非程式碼產出沒有人驗收。
