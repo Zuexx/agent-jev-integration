@@ -1,0 +1,8 @@
+{
+ "category": "blender",
+ "prompt": "Use the Blender tools to build a product shot of a coffee mug standing on a wooden table. The mug needs a handle and a ceramic look; the table a wood look. Light it with three-point lighting (key, fill, rim) and use a 50 mm camera that frames the mug well. Name the mug object Mug and the table object Table. Render at 640x360 to renders/shot.png.",
+ "check": "python3 -I \"$TASK_DIR/check.py\"",
+ "mcp": ["blender"],
+ "tier": "sonnet",
+ "timeout_s": 900
+}

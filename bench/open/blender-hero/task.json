@@ -1,0 +1,9 @@
+{
+ "category": "blender",
+ "variant": "vague",
+ "prompt": "We need a hero image for Notely's landing page. Make one with the Blender tools and save it as renders/hero.png.",
+ "check": "python3 -I \"$TASK_DIR/check.py\"",
+ "mcp": ["blender"],
+ "tier": "opus",
+ "timeout_s": 1200
+}
