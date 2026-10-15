@@ -106,6 +106,7 @@ func realMain(args []string) int {
 		"injeval":      cmdInjEval,
 		"cite":         cmdCite,
 		"blender-mcp":  cmdBlenderMCP,
+		"judge":        cmdJudge,
 	}
 	f, ok := cmds[args[0]]
 	if !ok {
@@ -1393,5 +1394,129 @@ func cmdBlenderMCP(args []string) int {
 	if err := blendermcp.Serve(context.Background(), os.Stdin, os.Stdout, e); err != nil {
 		return fail(err)
 	}
+	return 0
+}
+
+// cmdJudge runs the blind pairwise judge over a bench results file
+// (docs/eval-plan.md 5.2) and appends verdicts to judge-<results>.jsonl.
+func cmdJudge(args []string) int {
+	fset := flag.NewFlagSet("judge", flag.ContinueOnError)
+	runsPath := fset.String("runs", "", "bench-*.jsonl to judge (its -streams directory holds the artifacts)")
+	tasksDir := fset.String("tasks", "bench/open", "comma-separated task directories (for rubric.md)")
+	baseline := fset.String("baseline", "opus/off", "arm every other arm is compared with")
+	compare := fset.String("compare", "", "explicit comparisons X:Y,... (default: each arm vs --baseline, and each /open arm vs its restricted twin)")
+	model := fset.String("model", "opus", "judge model")
+	tokenFile := fset.String("token-file", "", "a `claude setup-token` token file for the judge's runs")
+	if err := fset.Parse(args); err != nil || *runsPath == "" {
+		fmt.Fprintln(os.Stderr, "usage: jevcc judge --runs bench-*.jsonl --token-file F [--compare X:Y,...]")
+		return 2
+	}
+	runs, err := bench.LoadRuns(*runsPath)
+	if err != nil {
+		return fail(err)
+	}
+	tasks := map[string]bench.Task{}
+	for _, d := range strings.Split(*tasksDir, ",") {
+		ts, err := bench.LoadTasks(d, nil)
+		if err != nil {
+			return fail(err)
+		}
+		for _, t := range ts {
+			tasks[t.Name] = t
+		}
+	}
+	var comps [][2]string
+	if *compare != "" {
+		for _, c := range strings.Split(*compare, ",") {
+			x, y, ok := strings.Cut(c, ":")
+			if !ok {
+				return fail(fmt.Errorf("bad comparison %q", c))
+			}
+			comps = append(comps, [2]string{x, y})
+		}
+	} else {
+		seen := map[string]bool{}
+		for _, r := range runs {
+			if seen[r.Arm] || r.Arm == *baseline {
+				continue
+			}
+			seen[r.Arm] = true
+			comps = append(comps, [2]string{r.Arm, *baseline})
+			if base, ok := strings.CutSuffix(r.Arm, "/open"); ok {
+				comps = append(comps, [2]string{r.Arm, base})
+			}
+		}
+	}
+	token := os.Getenv("CLAUDE_CODE_OAUTH_TOKEN")
+	if *tokenFile != "" {
+		b, err := os.ReadFile(*tokenFile)
+		if err != nil {
+			return fail(err)
+		}
+		token = strings.TrimSpace(string(b))
+	}
+	if token == "" {
+		return fail(errors.New("the judge runs isolated: pass --token-file"))
+	}
+	claude, err := exec.LookPath("claude")
+	if err != nil {
+		return fail(errors.New("claude not found on PATH"))
+	}
+	r := &bench.Runner{Claude: claude, PassEnv: []string{"CLAUDE_CODE_OAUTH_TOKEN=" + token}}
+	streams := strings.TrimSuffix(*runsPath, ".jsonl") + "-streams"
+	outPath := filepath.Join(filepath.Dir(*runsPath), "judge-"+filepath.Base(*runsPath))
+	done := map[string]bool{}
+	var prev []bench.Verdict
+	if b, err := os.ReadFile(outPath); err == nil {
+		for _, line := range strings.Split(string(b), "\n") {
+			var v bench.Verdict
+			if json.Unmarshal([]byte(line), &v) == nil && v.Error == "" {
+				done[bench.JobKey(v.Task, v.ArmX+"|"+v.ArmY, v.Rep)] = true
+				prev = append(prev, v)
+			}
+		}
+	}
+	pairs := bench.Pairs(runs, comps)
+	total := 0.0
+	for i, p := range pairs {
+		t, ok := tasks[p.Task]
+		if !ok || done[bench.JobKey(p.Task, p.X.Arm+"|"+p.Y.Arm, p.Rep)] {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(t.Dir, "rubric.md")); err != nil {
+			continue // tasks without a rubric are judged by their check alone
+		}
+		fmt.Fprintf(os.Stderr, "[%d/%d] %s #%d %s vs %s … ", i+1, len(pairs), p.Task, p.Rep, p.X.Arm, p.Y.Arm)
+		v := r.Judge(context.Background(), t, p, streams, *model)
+		total += v.USD
+		fsutil.AppendJSONL(outPath, v)
+		prev = append(prev, v)
+		if v.Error != "" {
+			fmt.Fprintln(os.Stderr, "error:", v.Error)
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "%s ($%.3f)\n", v.Winner, v.USD)
+	}
+	wins := map[string][3]int{} // per comparison: X wins, Y wins, ties
+	for _, v := range prev {
+		if v.Error != "" {
+			continue
+		}
+		k := v.ArmX + " vs " + v.ArmY
+		w := wins[k]
+		switch v.Winner {
+		case v.ArmX:
+			w[0]++
+		case v.ArmY:
+			w[1]++
+		default:
+			w[2]++
+		}
+		wins[k] = w
+	}
+	for k, w := range wins {
+		fmt.Printf("%-40s X wins %d, Y wins %d, ties %d\n", k, w[0], w[1], w[2])
+	}
+	fmt.Fprintf(os.Stderr, "judge cost this run: $%.3f; verdicts in %s\n", total, outPath)
 	return 0
 }
