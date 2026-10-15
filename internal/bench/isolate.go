@@ -56,12 +56,13 @@ func (s sandbox) env(base, extra []string) []string {
 }
 
 // Allow is what a clean Claude Code loads by itself (bench/isolation-allow.json):
-// its built-in agents and bundled skills. Everything a run adds on purpose
+// its built-in plugins, agents and bundled skills. Everything a run adds on purpose
 // (the arm's agents, hook events, a task's MCP server) is passed separately.
 type Allow struct {
-	Agents []string `json:"agents"`
-	Skills []string `json:"skills"`
-	MCP    []string `json:"mcp_servers,omitempty"`
+	Plugins []string `json:"plugins"` // only ones Claude Code reports as path "builtin"
+	Agents  []string `json:"agents"`
+	Skills  []string `json:"skills"`
+	MCP     []string `json:"mcp_servers,omitempty"`
 }
 
 func LoadAllow(path string) (Allow, error) {
@@ -92,11 +93,16 @@ func (n *named) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+type plugin struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
 // Init is the part of the stream's init event the isolation check reads.
 type Init struct {
 	Version     string            `json:"claude_code_version"`
 	Model       string            `json:"model"`
-	Plugins     []named           `json:"plugins"`
+	Plugins     []plugin          `json:"plugins"`
 	MCPServers  []named           `json:"mcp_servers"`
 	Agents      []named           `json:"agents"`
 	Skills      []named           `json:"skills"`
@@ -149,7 +155,9 @@ func checkIsolation(in *Init, hooks []string, sb sandbox, allow Allow, agents, e
 		return false
 	}
 	for _, p := range in.Plugins {
-		v = append(v, fmt.Sprintf("plugin %s", p))
+		if p.Path != "builtin" || !has(allow.Plugins, p.Name) {
+			v = append(v, fmt.Sprintf("plugin %s", p.Name))
+		}
 	}
 	for _, m := range in.MCPServers {
 		if !has(allow.MCP, string(m)) {
@@ -202,6 +210,12 @@ func (r *Runner) ProbeAllow(ctx context.Context) (Allow, []string, error) {
 		return Allow{}, nil, fmt.Errorf("no init event (claude: %v) %s", err, tail(string(result), 300))
 	}
 	var a Allow
+	for _, p := range in.Plugins {
+		if p.Path == "builtin" {
+			a.Plugins = append(a.Plugins, p.Name)
+		}
+	}
+	sort.Strings(a.Plugins)
 	for _, x := range in.Agents {
 		a.Agents = append(a.Agents, string(x))
 	}

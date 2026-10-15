@@ -25,11 +25,11 @@ func TestSandboxEnvDropsEvaluatorSetup(t *testing.T) {
 	}
 }
 
-const cleanInit = `{"type":"system","subtype":"init","claude_code_version":"2.1.300","model":"claude-haiku-5-5","plugins":[],"mcp_servers":[],"agents":["general-purpose","jev-opus"],"skills":["init"],"memory_paths":{"auto":"/sb/home/.claude/projects/x/memory/"}}`
+const cleanInit = `{"type":"system","subtype":"init","claude_code_version":"2.1.300","model":"claude-haiku-5-5","plugins":[{"name":"cc-plugin-telemetry","path":"builtin"}],"mcp_servers":[],"agents":["general-purpose","jev-opus"],"skills":["init"],"memory_paths":{"auto":"/sb/home/.claude/projects/x/memory/"}}`
 
 func TestCheckIsolation(t *testing.T) {
 	sb := sandbox{Root: "/sb"}
-	allow := Allow{Agents: []string{"general-purpose"}, Skills: []string{"init"}}
+	allow := Allow{Plugins: []string{"cc-plugin-telemetry"}, Agents: []string{"general-purpose"}, Skills: []string{"init"}}
 	clean := cleanInit + "\n" +
 		`{"type":"system","subtype":"hook_started","hook_name":"UserPromptSubmit"}` + "\n" +
 		`{"type":"result","total_cost_usd":0.1,"session_id":"S"}`
@@ -42,11 +42,11 @@ func TestCheckIsolation(t *testing.T) {
 	}
 
 	dirty := `{"type":"system","subtype":"hook_started","hook_name":"SessionStart:startup"}
-{"type":"system","subtype":"init","plugins":[{"name":"superpowers","path":"/p"}],"mcp_servers":[{"name":"codegraph","status":"connected"}],"agents":["general-purpose","my-agent"],"skills":["init","brainstorming"],"memory_paths":{"auto":"/Users/me/.claude/projects/x/memory/"}}
+{"type":"system","subtype":"init","plugins":[{"name":"superpowers","path":"/p"},{"name":"cc-plugin-telemetry","path":"/elsewhere"}],"mcp_servers":[{"name":"codegraph","status":"connected"}],"agents":["general-purpose","my-agent"],"skills":["init","brainstorming"],"memory_paths":{"auto":"/Users/me/.claude/projects/x/memory/"}}
 {"type":"result"}`
 	in, hooks, _ = parseStream([]byte(dirty))
 	v := strings.Join(checkIsolation(in, hooks, sb, allow, nil, []string{"UserPromptSubmit"}), "\n")
-	for _, want := range []string{"plugin superpowers", "mcp server codegraph", "agent my-agent", "skill brainstorming", "hook SessionStart:startup", "memory path /Users/me"} {
+	for _, want := range []string{"plugin superpowers", "plugin cc-plugin-telemetry", "mcp server codegraph", "agent my-agent", "skill brainstorming", "hook SessionStart:startup", "memory path /Users/me"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q in\n%s", want, v)
 		}
