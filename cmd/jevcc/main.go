@@ -107,6 +107,7 @@ func realMain(args []string) int {
 		"cite":         cmdCite,
 		"blender-mcp":  cmdBlenderMCP,
 		"judge":        cmdJudge,
+		"rate":         cmdRate,
 	}
 	f, ok := cmds[args[0]]
 	if !ok {
@@ -1518,5 +1519,40 @@ func cmdJudge(args []string) int {
 		fmt.Printf("%-40s X wins %d, Y wins %d, ties %d\n", k, w[0], w[1], w[2])
 	}
 	fmt.Fprintf(os.Stderr, "judge cost this run: $%.3f; verdicts in %s\n", total, outPath)
+	return 0
+}
+
+// cmdRate writes the blind human rating page for a bench results file
+// (docs/eval-plan.md 5.3): rate.html, rate-media/ and rate-key.json next to it.
+func cmdRate(args []string) int {
+	fset := flag.NewFlagSet("rate", flag.ContinueOnError)
+	runsPath := fset.String("runs", "", "bench-*.jsonl to sample from")
+	tasksDir := fset.String("tasks", "bench/open", "comma-separated task directories (for human.json)")
+	perTask := fset.Int("per-task", 6, "outputs to rate per task")
+	seed := fset.Int64("seed", 1, "sampling and order seed")
+	if err := fset.Parse(args); err != nil || *runsPath == "" {
+		fmt.Fprintln(os.Stderr, "usage: jevcc rate --runs bench-*.jsonl [--per-task N]")
+		return 2
+	}
+	runs, err := bench.LoadRuns(*runsPath)
+	if err != nil {
+		return fail(err)
+	}
+	tasks := map[string]bench.Task{}
+	for _, d := range strings.Split(*tasksDir, ",") {
+		ts, err := bench.LoadTasks(d, nil)
+		if err != nil {
+			return fail(err)
+		}
+		for _, t := range ts {
+			tasks[t.Name] = t
+		}
+	}
+	dir := filepath.Dir(*runsPath)
+	sample := bench.SampleForRating(runs, tasks, *perTask, *seed)
+	if err := bench.WriteRatingPage(dir, strings.TrimSuffix(*runsPath, ".jsonl")+"-streams", sample, tasks); err != nil {
+		return fail(err)
+	}
+	fmt.Printf("%d outputs; open %s (the key is in rate-key.json; do not open it before rating)\n", len(sample), filepath.Join(dir, "rate.html"))
 	return 0
 }

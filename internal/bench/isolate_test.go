@@ -234,7 +234,8 @@ echo '{"total_cost_usd":0.1,"session_id":"S","is_error":false}'
 		JevUse: func(string, string) JevUse { return JevUse{Decisions: 1} }}
 	task := Task{Name: "a", Dir: dir, Prompt: "p", TimeoutS: 30, Check: `grep -qx sonnet args.txt && grep -qx '{"jev-haiku":{}}' args.txt && ` +
 		`grep -qx JEVCC_DELEGATE=agent env.txt && grep -qx JEVCC_ESCALATE=0 env.txt && grep -qx JEVCC_MAIN=sonnet env.txt && grep -qx JEVCC_MODE=on env.txt && ! grep -q Stop args.txt`}
-	if res := r.Do(context.Background(), task, "sonnet/down/open", 1); !res.Pass || res.Model != "sonnet" {
+	r.SaveDir = t.TempDir()
+	if res := r.Do(context.Background(), task, "sonnet/down/open", 1); !res.Pass || res.Model != "sonnet" || !strings.HasPrefix(res.Artifacts, "artifacts/a_sonnet-down-open_1_") {
 		t.Fatalf("down: %+v", res)
 	}
 	task.Check = `grep -qx haiku args.txt && grep -q Stop args.txt && ! grep -qx -- --no-session-persistence args.txt && ` +

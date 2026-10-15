@@ -540,7 +540,8 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 	start := time.Now()
 	out, err := cmd.Output()
 	res.DurMS = time.Since(start).Milliseconds()
-	runName := fmt.Sprintf("%s_%s_%d_%d", t.Name, arm, rep, time.Now().UnixNano())
+	// Lead arms contain "/", which must not become a directory level.
+	runName := fmt.Sprintf("%s_%s_%d_%d", t.Name, strings.ReplaceAll(arm, "/", "-"), rep, time.Now().UnixNano())
 	if r.Isolate {
 		if r.SaveDir != "" {
 			os.WriteFile(filepath.Join(r.SaveDir, runName+".jsonl"), out, 0o600)
