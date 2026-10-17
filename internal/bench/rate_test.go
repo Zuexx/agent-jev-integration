@@ -90,6 +90,9 @@ func TestMinimalRatingPageShowsOnlyMedia(t *testing.T) {
 			t.Errorf("minimal page shows %q", hidden)
 		}
 	}
+	if strings.Contains(string(page), "__PAGE_ID__") || strings.Contains(string(page), "location.pathname") {
+		t.Error("page storage key is not per sample")
+	}
 	if !strings.Contains(string(page), `src="rate-media/r01/render.png"`) || !strings.Contains(string(page), `value="5"`) {
 		t.Error("minimal page lacks the image or the score buttons")
 	}

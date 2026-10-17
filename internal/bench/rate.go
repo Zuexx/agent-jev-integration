@@ -1,6 +1,9 @@
 package bench
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -158,12 +161,13 @@ func WriteRatingPage(dir, streams string, sample []Run, tasks map[string]Task, m
 	if err := os.WriteFile(filepath.Join(dir, "rate-key.json"), kb, 0o644); err != nil {
 		return err
 	}
-	f, err := os.Create(filepath.Join(dir, "rate.html"))
-	if err != nil {
+	var page bytes.Buffer
+	if err := ratePage.Execute(&page, items); err != nil {
 		return err
 	}
-	defer f.Close()
-	return ratePage.Execute(f, items)
+	sum := sha256.Sum256(kb)
+	out := bytes.Replace(page.Bytes(), []byte("__PAGE_ID__"), []byte(hex.EncodeToString(sum[:8])), 1)
+	return os.WriteFile(filepath.Join(dir, "rate.html"), out, 0o644)
 }
 
 func rank(f RateFile) int {
@@ -244,7 +248,7 @@ function md(src) {
   return out.join("\n");
 }
 document.querySelectorAll(".md").forEach(el => { el.innerHTML = md(el.dataset.text); });
-const KEY = "jevcc-rate:" + location.pathname;
+const KEY = "jevcc-rate:__PAGE_ID__"; // per sample: a regenerated page at the same path must not inherit answers
 let state = {};
 try { state = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) {}
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };

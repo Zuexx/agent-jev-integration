@@ -334,3 +334,8 @@ Q3 → 往下派工是否預設開啟；Q4 → D3（`jev-*` 的工具設定）�
     精簡頁面（`jevcc rate --minimal`：只顯示圖片與影片、純 1–5 分、不顯示題目與選項說明），只抽第 1 輪沒出現過的那一次重複
     （`--exclude rate-round1/rate-key.json --per-task 5 --seed 3`，blender-hero、blender-product-shot、video-intro、
     video-vague 各 5 份，共 20 份）。兩輪分開報告；第 1 輪資料保留在 `rate-round1/`。
+  - **人工評分第 2 輪改由第三方（2026-10-17）**：使用者找一位完全不知道專案背景的人評第 2 輪。第一次嘗試作廢：評分頁的進度
+    以頁面路徑存在瀏覽器裡，同一路徑的新舊頁共用進度，第三方打開的是第 1 輪頁面且已帶入使用者的答案（50 份中 36 份與使用者
+    相同、備註也帶入），無法分辨是否獨立評分；檔案留存為 `rate-round1/ratings-outsider-contaminated.json`，不採用。
+    修正：每份頁面的進度鍵改為依抽樣內容產生（`jevcc-rate:<hash>`）。第 2 輪頁面重新產生（同樣 20 份）。
+  - 週額度：見 decisions.md D8（本週不保留 30%）。
