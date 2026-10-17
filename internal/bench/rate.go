@@ -28,11 +28,12 @@ type HumanScale struct {
 
 // RateItem is one output to rate.
 type RateItem struct {
-	ID     string
-	Task   string
-	Prompt string
-	Scale  HumanScale
-	Files  []RateFile
+	ID      string
+	Task    string
+	Prompt  string
+	Scale   HumanScale
+	Files   []RateFile
+	Minimal bool
 }
 
 // RateFile is one artifact shown on the page.
@@ -103,7 +104,10 @@ func SampleForRating(runs []Run, tasks map[string]Task, perTask int, seed int64)
 
 // WriteRatingPage writes rate.html and rate-key.json into dir (the results
 // directory, so artifact paths stay relative) for the sampled runs.
-func WriteRatingPage(dir, streams string, sample []Run, tasks map[string]Task) error {
+// With minimal set the page shows only images and videos and plain 1–5
+// buttons: no task text, question or option descriptions, which the rater
+// found steered their scores.
+func WriteRatingPage(dir, streams string, sample []Run, tasks map[string]Task, minimal bool) error {
 	var items []RateItem
 	var key []RateKeyEntry
 	for i, r := range sample {
@@ -117,7 +121,7 @@ func WriteRatingPage(dir, streams string, sample []Run, tasks map[string]Task) e
 			return fmt.Errorf("%s/human.json: %w", t.Name, err)
 		}
 		id := fmt.Sprintf("r%02d", i+1)
-		it := RateItem{ID: id, Task: r.Task, Prompt: t.Prompt, Scale: scale}
+		it := RateItem{ID: id, Task: r.Task, Prompt: t.Prompt, Scale: scale, Minimal: minimal}
 		root := filepath.Join(streams, r.Artifacts)
 		// Media is copied under the blinded id: artifact paths name the arm.
 		media := func(p, rel string) string {
@@ -139,7 +143,7 @@ func WriteRatingPage(dir, streams string, sample []Run, tasks map[string]Task) e
 			case ".mp4", ".webm", ".mov":
 				it.Files = append(it.Files, RateFile{Name: rel, Kind: "video", Src: media(p, rel)})
 			case ".md", ".txt", ".csv", ".json", ".go", ".ts", ".tsx", ".py", ".yaml", ".yml":
-				if b, err := os.ReadFile(p); err == nil && len(b) < 200_000 {
+				if b, err := os.ReadFile(p); err == nil && len(b) < 200_000 && !minimal {
 					it.Files = append(it.Files, RateFile{Name: rel, Kind: "text", Text: string(b), Markdown: ext == ".md"})
 				}
 			}
@@ -196,17 +200,18 @@ label.opt:has(input:checked){background:var(--pick);border-color:var(--accent)}
 .md table{border-collapse:collapse;margin:8px 0;font-size:14px}.md th,.md td{border:1px solid var(--line);padding:4px 8px;text-align:left}
 .md code{font:13px ui-monospace,Menlo,monospace;background:var(--bg);padding:1px 4px;border-radius:4px}.md blockquote{margin:8px 0;padding-left:12px;border-left:3px solid var(--line);color:var(--muted)}
 .md h1{font-size:20px}.md h2{font-size:18px}.md h3{font-size:16px}
+.nums{display:flex;gap:8px;flex-wrap:wrap}.nums label.opt{flex:1;min-width:48px;justify-content:center;align-items:center}
 textarea{width:100%;min-height:56px;font:inherit;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px}
 </style></head><body>
 <header><h1>盲評：成品評分</h1><span id="progress"></span><button id="export">匯出 ratings.json</button></header>
 <main>
-<p>每一份成品的來源都隱藏了，順序也是隨機的。請依你的感受，為每一份挑一個最接近的分數；可以分多次評，進度會留在這個瀏覽器裡。全部評完後按右上角「匯出」，把下載的 ratings.json 交回。</p>
+{{if and . (index . 0).Minimal}}<p>看成品，憑直覺給分：1 最差，5 最好。進度會留在這個瀏覽器裡；評完按右上角「匯出」。</p>{{else}}<p>每一份成品的來源都隱藏了，順序也是隨機的。請依你的感受，為每一份挑一個最接近的分數；可以分多次評，進度會留在這個瀏覽器裡。全部評完後按右上角「匯出」，把下載的 ratings.json 交回。</p>{{end}}
 {{range .}}<section class="item" data-id="{{.ID}}">
 <h2>{{.ID}}</h2>
-<details><summary>當時給的題目（英文原文）</summary><pre>{{.Prompt}}</pre></details>
+{{if not .Minimal}}<details><summary>當時給的題目（英文原文）</summary><pre>{{.Prompt}}</pre></details>{{end}}
 {{range .Files}}<div class="fname">{{.Name}}</div>{{if eq .Kind "image"}}<img loading="lazy" src="{{.Src}}" alt="{{.Name}}">{{else if eq .Kind "video"}}<video controls preload="metadata" src="{{.Src}}"></video>{{else if .Markdown}}<div class="md" data-text="{{.Text}}"></div><details><summary>原始文字</summary><pre>{{.Text}}</pre></details>{{else}}<pre>{{.Text}}</pre>{{end}}{{end}}
-<div class="q">{{.Scale.Question}}</div>
-{{$id := .ID}}{{range .Scale.Options}}<label class="opt"><input type="radio" name="{{$id}}" value="{{.Score}}"><span><b>{{.Score}}</b>　{{.Label}}</span></label>{{end}}
+{{$id := .ID}}{{if .Minimal}}{{if not .Files}}<p class="fname">（沒有圖片或影片）</p>{{end}}<div class="nums">{{range .Scale.Options}}<label class="opt"><input type="radio" name="{{$id}}" value="{{.Score}}"><b>{{.Score}}</b></label>{{end}}</div>{{else}}<div class="q">{{.Scale.Question}}</div>
+{{range .Scale.Options}}<label class="opt"><input type="radio" name="{{$id}}" value="{{.Score}}"><span><b>{{.Score}}</b>　{{.Label}}</span></label>{{end}}{{end}}
 <textarea placeholder="備註（選填）" data-note="{{.ID}}"></textarea>
 </section>{{end}}
 </main>

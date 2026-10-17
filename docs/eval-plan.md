@@ -329,3 +329,8 @@ Q3 → 往下派工是否預設開啟；Q4 → D3（`jev-*` 的工具設定）�
     「沒有人工檢查」。抽樣改為整次重複（同一題同一次的五組成品都抽），讓人工分數能對上評審的配對：
     `jevcc rate --only blender-fix-black,blender-hero,blender-product-shot,video-intro,video-vague --per-task 10 --seed 2`，
     50 份成品、可對照的評審配對 40 對。原本隨機抽的頁面（52 份，只對得上 7 對）作廢，留在 `old-rate-allopen/`。
+  - **人工評分第 1 輪結果與第 2 輪（2026-10-17）**：第 1 輪 49/50 份有分數。blender-fix-black 評分者在備註中表示無法判斷
+    （看不出修了什麼），該題人工分數不採用。使用者表示選項說明與題目文字會影響評分，只想憑直覺看成品給分。第 2 輪改用
+    精簡頁面（`jevcc rate --minimal`：只顯示圖片與影片、純 1–5 分、不顯示題目與選項說明），只抽第 1 輪沒出現過的那一次重複
+    （`--exclude rate-round1/rate-key.json --per-task 5 --seed 3`，blender-hero、blender-product-shot、video-intro、
+    video-vague 各 5 份，共 20 份）。兩輪分開報告；第 1 輪資料保留在 `rate-round1/`。

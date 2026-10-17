@@ -1589,6 +1589,8 @@ func cmdRate(args []string) int {
 	perTask := fset.Int("per-task", 6, "outputs to rate per task (whole repetitions: every arm's run of a rep)")
 	seed := fset.Int64("seed", 1, "sampling and order seed")
 	only := fset.String("only", "", "comma-separated task names to rate (default: every task with human.json)")
+	minimal := fset.Bool("minimal", false, "show only images and videos with plain 1–5 buttons (no task text or option descriptions)")
+	exclude := fset.String("exclude", "", "a previous rate-key.json: leave out the runs it already showed")
 	if err := fset.Parse(args); err != nil || *runsPath == "" {
 		fmt.Fprintln(os.Stderr, "usage: jevcc rate --runs bench-*.jsonl [--per-task N]")
 		return 2
@@ -1618,9 +1620,30 @@ func cmdRate(args []string) int {
 			}
 		}
 	}
+	if *exclude != "" {
+		b, err := os.ReadFile(*exclude)
+		if err != nil {
+			return fail(err)
+		}
+		var seen []bench.RateKeyEntry
+		if err := json.Unmarshal(b, &seen); err != nil {
+			return fail(err)
+		}
+		skip := map[string]bool{}
+		for _, k := range seen {
+			skip[bench.JobKey(k.Task, k.Arm, k.Rep)] = true
+		}
+		kept := runs[:0]
+		for _, r := range runs {
+			if !skip[bench.JobKey(r.Task, r.Arm, r.Rep)] {
+				kept = append(kept, r)
+			}
+		}
+		runs = kept
+	}
 	dir := filepath.Dir(*runsPath)
 	sample := bench.SampleForRating(runs, tasks, *perTask, *seed)
-	if err := bench.WriteRatingPage(dir, strings.TrimSuffix(*runsPath, ".jsonl")+"-streams", sample, tasks); err != nil {
+	if err := bench.WriteRatingPage(dir, strings.TrimSuffix(*runsPath, ".jsonl")+"-streams", sample, tasks, *minimal); err != nil {
 		return fail(err)
 	}
 	fmt.Printf("%d outputs; open %s (the key is in rate-key.json; do not open it before rating)\n", len(sample), filepath.Join(dir, "rate.html"))

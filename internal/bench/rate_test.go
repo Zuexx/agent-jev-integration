@@ -27,7 +27,7 @@ func TestRatingPageIsBlind(t *testing.T) {
 	if len(sample) != 2 || sample[0].Arm == sample[1].Arm {
 		t.Fatalf("want 2 runs from different arms: %+v", sample)
 	}
-	if err := WriteRatingPage(dir, streams, sample, tasks); err != nil {
+	if err := WriteRatingPage(dir, streams, sample, tasks, false); err != nil {
 		t.Fatal(err)
 	}
 	page, _ := os.ReadFile(filepath.Join(dir, "rate.html"))
@@ -68,5 +68,29 @@ func TestSampleTakesWholeRepetitions(t *testing.T) {
 		if n != 5 {
 			t.Errorf("rep %d has %d of 5 arms", rep, n)
 		}
+	}
+}
+
+func TestMinimalRatingPageShowsOnlyMedia(t *testing.T) {
+	taskDir := t.TempDir()
+	os.WriteFile(filepath.Join(taskDir, "human.json"), []byte(`{"question":"QUESTION","options":[{"score":1,"label":"LABEL-ONE"},{"score":5,"label":"LABEL-FIVE"}]}`), 0o644)
+	tasks := map[string]Task{"t": {Name: "t", Dir: taskDir, Prompt: "PROMPT-TEXT"}}
+	dir := t.TempDir()
+	streams := filepath.Join(dir, "s")
+	art := filepath.Join("artifacts", "a")
+	os.MkdirAll(filepath.Join(streams, art), 0o755)
+	os.WriteFile(filepath.Join(streams, art, "render.png"), []byte("png"), 0o644)
+	os.WriteFile(filepath.Join(streams, art, "fix.py"), []byte("CODE-TEXT"), 0o644)
+	if err := WriteRatingPage(dir, streams, []Run{{Task: "t", Arm: "opus/off", Rep: 1, Artifacts: art}}, tasks, true); err != nil {
+		t.Fatal(err)
+	}
+	page, _ := os.ReadFile(filepath.Join(dir, "rate.html"))
+	for _, hidden := range []string{"PROMPT-TEXT", "QUESTION", "LABEL-ONE", "CODE-TEXT"} {
+		if strings.Contains(string(page), hidden) {
+			t.Errorf("minimal page shows %q", hidden)
+		}
+	}
+	if !strings.Contains(string(page), `src="rate-media/r01/render.png"`) || !strings.Contains(string(page), `value="5"`) {
+		t.Error("minimal page lacks the image or the score buttons")
 	}
 }
