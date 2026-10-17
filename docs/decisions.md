@@ -23,7 +23,7 @@
 
 ## D3 — `jev-*` subagent 的工具限制
 
-- 日期：2026-10-15　狀態：**保留待評測**（等 D4）
+- 日期：2026-10-15　狀態：**改為使用者自選**（2026-10-18，見 D10）
 - 問題：`tools` 寫死為 `Read, Grep, Glob, Bash, Edit, Write`，拿不到 MCP 工具，也不能用 skill。
 - 查證（官方 sub-agents 文件，2026-10-15）：
   - 省略 `tools` 會繼承主對話全部工具，含 MCP 與 `Skill`；可用 `disallowedTools` 排除，`mcp__<server>__*` 可當萬用字元。
@@ -97,3 +97,17 @@
 - 驗證（計畫第 12 節）：第 3 條以單元測試（模擬系統驗證失敗、改用 PEM bundle）與實機確認（`/etc/ssl/cert.pem` 可驗證
   api.typesafe.ai）；鎖定螢幕下的實測待下次背景執行。第 1、2 條只改文件與建議，不改行為，沒有可在新題目上驗證的程式變更。
 - D3 維持待評測（P3 未跑）。
+
+## D10 — 不跑 P3、P4；subagent 用 MCP 與 guard 改成使用者自選、預設關（2026-10-18）
+
+- 使用者決定：P3（subagent 工具全開 vs 限制）與 P4（補充）不跑。D3 不靠評測定案，改成開關讓使用者自己選。
+- `agent_mcp`（`/jev mcp on|off`、`jevcc install --agent-mcp`）：開啟時 jev-haiku／jev-sonnet／jev-opus 的檔案拿掉 `tools`，
+  繼承主對話全部工具（含 MCP 與 Skill）；jev-review 不變。預設關（即原本的限制）。只改寫 jevcc 安裝在使用者範圍的 agent
+  檔，新對話才生效；plugin 安裝的 agent 是固定檔，維持限制。
+- `guard`（`/jev guard on|off`、`jevcc install --guard`）：預設由開改為關。
+- 已知取捨：
+  - guard 改預設關後，沒有在設定裡寫 `"guard": true` 的既有使用者會失去危險動作確認（原本預設開）；它只會要求確認、不會擋，
+    關掉後 Claude Code 自己的權限提示仍在。換來每次 Bash／寫檔少一次 Jev 呼叫（延遲與花費）。
+  - agent_mcp 開啟後 subagent 能用 MCP 與 skill（冒煙測試中受限的 subagent 改用命令列 Blender 或 Bash 讀 skill 繞過），
+    但也能用主對話所有 MCP 的寫入類工具；`AskUserQuestion` 等仍會被 Claude Code 從 subagent 移除。
+- D3 狀態：由這條取代（不再待評測）。

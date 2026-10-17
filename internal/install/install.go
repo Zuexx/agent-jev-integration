@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -60,6 +61,10 @@ type Options struct {
 	DefaultModel string
 	// OnByDefault sets default_on in ~/.jevcc/config.json.
 	OnByDefault bool
+	// AgentMCP installs the worker subagents without a tools list (agent_mcp).
+	AgentMCP bool
+	// Guard sets guard: true in ~/.jevcc/config.json.
+	Guard bool
 	// Statusline wraps the scope's statusLine with `jevcc statusline`.
 	Statusline bool
 	Exe        string
@@ -225,15 +230,45 @@ func Commands(jevcc string) map[string][]byte {
 }
 
 // Agents returns the light subagents the delegation advice names.
-func Agents() map[string][]byte {
+func Agents() map[string][]byte { return AgentsFor(false) }
+
+// AgentsFor returns the subagents; with mcp the workers (not jev-review)
+// drop their tools line and so inherit every tool of the session, MCP
+// servers and Skill included.
+func AgentsFor(mcp bool) map[string][]byte {
 	out := map[string][]byte{}
 	entries, _ := fs.ReadDir(commandFS, "agents")
 	for _, e := range entries {
 		b, _ := commandFS.ReadFile("agents/" + e.Name())
+		if mcp && e.Name() != "jev-review.md" {
+			b = toolsLine.ReplaceAll(b, nil)
+		}
 		out[e.Name()] = b
 	}
 	return out
 }
+
+var toolsLine = regexp.MustCompile(`(?m)^tools:.*\n`)
+
+// WriteAgents rewrites the installed subagents in dir for the mcp setting.
+// Only files jevcc installed there are touched.
+func WriteAgents(dir string, mcp bool) (int, error) {
+	n := 0
+	for name, body := range AgentsFor(mcp) {
+		p := filepath.Join(dir, name)
+		if _, err := os.Stat(p); err != nil {
+			continue
+		}
+		if err := fsutil.WriteFileAtomic(p, body, 0o644); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
+}
+
+// UserAgentsDir is where a user-scope install puts the subagents.
+func UserAgentsDir() string { return filepath.Join(paths.ClaudeDir(), "agents") }
 
 // AgentsJSON renders the agents for `claude --agents` (used by the benchmark).
 func AgentsJSON() string { return agentsJSON(false) }
@@ -303,7 +338,7 @@ func Install(o Options) error {
 		}
 	}
 	fmt.Fprintf(o.Out, "✓ /jev, /jev-classify, /jev-lint, /jev-review, /jev-audit added to %s\n", o.commandsDir())
-	for name, body := range Agents() {
+	for name, body := range AgentsFor(o.AgentMCP) {
 		if err := fsutil.WriteFileAtomic(filepath.Join(o.agentsDir(), name), body, 0o644); err != nil {
 			return err
 		}
@@ -330,6 +365,18 @@ func Install(o Options) error {
 			return err
 		}
 		fmt.Fprintln(o.Out, "✓ Jev routing is on in every new session (/jev off turns it off per session)")
+	}
+	if o.AgentMCP {
+		if err := config.SetField("agent_mcp", true); err != nil {
+			return err
+		}
+		fmt.Fprintln(o.Out, "✓ jev-haiku/sonnet/opus get every session tool, MCP and Skill included (/jev mcp off reverts)")
+	}
+	if o.Guard {
+		if err := config.SetField("guard", true); err != nil {
+			return err
+		}
+		fmt.Fprintln(o.Out, "✓ guard on: risky commands and writes ask you first (/jev guard off turns it off)")
 	}
 	cfg, err := config.Load()
 	if err == nil && cfg.APIKey == "" {

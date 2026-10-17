@@ -47,7 +47,7 @@ jevcc install --default-model haiku --on-by-default
 - `--on-by-default`：每個新對話自動開啟 Jev（單一對話可用 `/jev off` 關掉）
 - 主對話用什麼模型由 hook 自動偵測（對話紀錄裡最近一次回覆的模型 → Claude Code 設定），用 `/model` 中途切換也會跟著變
 
-預設行為：往上升級開、往下委派關（實測反而貴）、事後驗收只在主對話比 opus 便宜時作用、危險動作檢查開（只會要求確認）。要改才需要 `~/.jevcc/config.json`，欄位見上方設定說明。
+預設行為：往上升級開、往下委派關（實測反而貴）、事後驗收只在主對話比 opus 便宜時作用、危險動作檢查**關**（`/jev guard on` 或 `jevcc install --guard` 開啟，只會要求確認）、subagent 用 MCP／skill **關**（`/jev mcp on` 或 `jevcc install --agent-mcp` 開啟，新對話生效）。要改才需要 `~/.jevcc/config.json`，欄位見上方設定說明。
 
 每句話的處理方式：
 
@@ -56,7 +56,7 @@ jevcc install --default-model haiku --on-by-default
 | Jev 判定需要 opus（規劃、架構、不明原因的 bug、安全審查） | haiku 先把工作交給 `jev-opus` subagent | 17/17 照做；opus 題中 Jev 判對 17/21 |
 | 一般工作 | haiku 自己做 | 10 個任務成本中位數 −96%，全數通過；5 道規格陷阱題 haiku 也全過 |
 | haiku 說做完了 | Jev 驗收，有改程式卻沒跑過測試、有沒解決的錯誤等狀況就交給 opus 複查（`"verify": true`） | 簡單任務誤升級 0/2 |
-| 要執行指令或寫檔 | 危險動作改成請你確認（`"guard": true`） | 危險抓到 21/22，安全誤擋 0/23（字串規則：12/22、2/23） |
+| 要執行指令或寫檔（開啟 guard 時） | 危險動作改成請你確認（`"guard": true`，預設關） | 危險抓到 21/22，安全誤擋 0/23（字串規則：12/22、2/23） |
 | 問題跟專案程式碼有關 | 附上最可能相關的 3 個檔案 | 前三名挑對 19/20；haiku 讀的 token −20% |
 | 你說出長期偏好或規則 | 提醒 Claude 存進記憶 | 20/20 抓到、一次性指示誤判 0/20 |
 

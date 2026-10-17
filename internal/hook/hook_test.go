@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/zuexx/agent-jev-integration/internal/config"
+	"github.com/zuexx/agent-jev-integration/internal/install"
 	"github.com/zuexx/agent-jev-integration/internal/jev"
 	"github.com/zuexx/agent-jev-integration/internal/journal"
 	"github.com/zuexx/agent-jev-integration/internal/paths"
@@ -308,5 +309,32 @@ func TestRouteRecordsMainTierAndTrace(t *testing.T) {
 		rec.Trace.MinConf != cfg.MinConfidence || rec.Trace.EscalateConf != cfg.EscalateConfidence ||
 		rec.Trace.SkillFit != cfg.SkillFit || rec.Trace.Memory != cfg.MemoryThreshold || rec.Trace.MinConf == 0 {
 		t.Fatalf("%+v %+v", out, rec.Trace)
+	}
+}
+
+func TestJevMCPAndGuardCommands(t *testing.T) {
+	t.Setenv("JEVCC_HOME", t.TempDir())
+	claude := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", claude)
+	os.MkdirAll(filepath.Join(claude, "agents"), 0o755)
+	os.WriteFile(filepath.Join(claude, "agents", "jev-sonnet.md"), install.Agents()["jev-sonnet.md"], 0o644)
+	cfg, _ := config.Load()
+	if cfg.GuardOn() || cfg.AgentMCP {
+		t.Fatal("guard and agent MCP must be off by default")
+	}
+	if out, ok := Command(Input{Prompt: "/jev mcp on"}, cfg); !ok || !strings.Contains(out.Reason, "rewrote 1 agent") {
+		t.Fatalf("%+v", out)
+	}
+	b, _ := os.ReadFile(filepath.Join(claude, "agents", "jev-sonnet.md"))
+	if strings.Contains(string(b), "\ntools: ") {
+		t.Fatal("agent still restricted")
+	}
+	Command(Input{Prompt: "/jev guard on"}, cfg)
+	cfg, _ = config.Load()
+	if !cfg.AgentMCP || !cfg.GuardOn() {
+		t.Fatalf("not saved: %+v", cfg)
+	}
+	if out, _ := Command(Input{Prompt: "/jev guard"}, cfg); !strings.Contains(out.Reason, "now: on") {
+		t.Fatalf("%+v", out)
 	}
 }

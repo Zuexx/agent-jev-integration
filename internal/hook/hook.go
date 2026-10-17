@@ -24,6 +24,7 @@ import (
 	"github.com/zuexx/agent-jev-integration/internal/fsutil"
 	"github.com/zuexx/agent-jev-integration/internal/guard"
 	"github.com/zuexx/agent-jev-integration/internal/inject"
+	"github.com/zuexx/agent-jev-integration/internal/install"
 	"github.com/zuexx/agent-jev-integration/internal/jev"
 	"github.com/zuexx/agent-jev-integration/internal/journal"
 	"github.com/zuexx/agent-jev-integration/internal/logx"
@@ -98,8 +99,17 @@ const help = `jevcc /jev commands (handled locally, no model call):
   /jev off      back to plain Claude Code
   /jev status   show whether routing is on and the configured tiers
   /jev stats    what Jev decided so far and whether Claude followed it
+  /jev mcp on|off     let jev-haiku/sonnet/opus use MCP servers and skills (default off)
+  /jev guard on|off   ask before risky commands and writes (default off)
   /jev statusline full|compact|off   how much jevcc shows in the statusline
 Other commands: /jev-classify, /jev-lint, /jev-review, /jev-audit`
+
+func onOff(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
+}
 
 // Command handles a /jev prompt. ok is false for any other prompt.
 func Command(in Input, cfg *config.Config) (out *Output, ok bool) {
@@ -174,6 +184,37 @@ func Command(in Input, cfg *config.Config) (out *Output, ok bool) {
 			return block("jevcc: statusline set to %s (applies on the next refresh)", mode), true
 		}
 		return block("usage: /jev statusline full|compact|off (now: %s)", cfg.Statusline), true
+	case "mcp", "guard":
+		v := ""
+		if len(f) > 2 {
+			v = f[2]
+		}
+		if v != "on" && v != "off" {
+			now := cfg.AgentMCP
+			if arg == "guard" {
+				now = cfg.GuardOn()
+			}
+			return block("usage: /jev %s on|off (now: %s)", arg, onOff(now)), true
+		}
+		if arg == "guard" {
+			if err := config.SetField("guard", v == "on"); err != nil {
+				return block("jevcc: %v", err), true
+			}
+			return block("jevcc: guard %s — risky commands and writes %s (all sessions, from the next tool call)", v,
+				map[string]string{"on": "ask you first", "off": "run without a Jev check"}[v]), true
+		}
+		if err := config.SetField("agent_mcp", v == "on"); err != nil {
+			return block("jevcc: %v", err), true
+		}
+		n, err := install.WriteAgents(install.UserAgentsDir(), v == "on")
+		if err != nil {
+			return block("jevcc: %v", err), true
+		}
+		msg := fmt.Sprintf("jevcc: subagent MCP/Skill %s; rewrote %d agent files in %s. Takes effect in new sessions.", v, n, install.UserAgentsDir())
+		if n == 0 {
+			msg += "\n(no user-scope agents found: for a project or plugin install, rerun `jevcc install` with the same scope)"
+		}
+		return block("%s", msg), true
 	case "stats":
 		recs, err := stats.LoadDecisions()
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -297,7 +338,8 @@ func Features(cfg *config.Config, in Input) []Feature {
 		{"escalate to a stronger subagent", "↑", routing && cfg.EscalateOn() && cheap, fmt.Sprintf("needs a session cheaper than opus; confidence ≥ %.2f; at most %d per session", cfg.EscalateConfidence, cfg.EscalateMaxPerSession)},
 		{"delegate down to a cheaper subagent", "↓", routing && cfg.Delegate, "off by default (measured +14% cost)"},
 		{"review finished coding turns (Stop)", "review", routing && cfg.VerifyOn() && cheap, fmt.Sprintf("to %s at risk ≥ %.2f; at most %d per session", cfg.VerifyAgent, cfg.VerifyThreshold, cfg.VerifyMaxPerSession)},
-		{"guard risky commands/writes (PreToolUse)", "🛡", cfg.GuardOn(), fmt.Sprintf("asks you at risk ≥ %.2f; works even with routing off", cfg.GuardThreshold)},
+		{"guard risky commands/writes (PreToolUse)", "🛡", cfg.GuardOn(), fmt.Sprintf("off by default (/jev guard on); asks you at risk ≥ %.2f; works even with routing off", cfg.GuardThreshold)},
+		{"subagents may use MCP servers and skills", "mcp", cfg.AgentMCP, "off by default (/jev mcp on); applies to new sessions"},
 		{"screen fetched content for injection (PostToolUse)", "inject", cfg.InjectionOn(), fmt.Sprintf("warns at p ≥ %.2f", cfg.InjectionThreshold)},
 		{"likely-relevant files hint", "files", routing && cfg.FindFilesOn(), "in project folders up to 1500 files"},
 		{"skill suggestion", "skill", routing && cfg.SkillAdviceOn(), fmt.Sprintf("fit ≥ %.2f", cfg.SkillFit)},
