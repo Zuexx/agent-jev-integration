@@ -268,7 +268,7 @@ func call(ctx context.Context, r Runner, name string, args map[string]any) (stri
 		return r.Run(ctx, sceneInfoBody, nil)
 	case "render":
 		output, _ := args["output"].(string)
-		if output == "" || filepath.IsAbs(output) || strings.Contains(output, "..") || !strings.HasSuffix(strings.ToLower(output), ".png") {
+		if output == "" || filepath.IsAbs(output) || strings.HasPrefix(output, "/") || strings.HasPrefix(output, `\`) || filepath.VolumeName(output) != "" || strings.Contains(output, "..") || !strings.HasSuffix(strings.ToLower(output), ".png") {
 			return "", fmt.Errorf("output must be a relative .png path inside the project")
 		}
 		samples := 64
