@@ -25,8 +25,17 @@
 - **挑 skill**：照官方 Skill suggestion cookbook 的兩段式（第一次排名全部 skill + 「需不需要 skill」閘門，第二次精讀前三名可全部否決）。
   它降低「載錯 skill」，**不會**減少 Claude Code 本身送出的 skill 清單 token。
 - 信心不足、逾時、出錯 → 不加任何內容，prompt 照常送出（hook 永不讓 claude 壞掉）。只有可執行的建議才會加進 context。
+  呼叫失敗會記下來，狀態列顯示「⚠ N Jev errors」。macOS 螢幕鎖定時系統的憑證驗證會失敗（`x509: OSStatus -26276`），
+  這種情況會自動改用系統內建的 `/etc/ssl/cert.pem` 再試一次。
 
 ## 建議設定：從 claude 進、預設 haiku、讓 Jev 決定何時升級
+
+> **2026-10 隔離評測後的修正（`docs/eval-report.md`，決定 D9）**：預設 haiku 只適合規格清楚、能用測試驗收的程式工作
+> （程式難題 haiku 主導 14/15 通過，花費約 opus 的 4%）。研究、規劃、設計、影片、Blender 這類開放式與視覺類工作，
+> **一開始就用 opus（或 sonnet）主導**：haiku 主導明顯較差（opus 評審與兩位人工評分者一致），而「haiku＋往上升級」
+> 花費約 haiku 的 11 倍、opus 的一半，品質大多仍輸 opus 主導，不能拿來替代。
+> opus 主導開往下委派（`"delegate": true`）：品質不變；只有程式類明確省錢（約 −16%），其他類別 Jev 通常不委派，整體 −6%、無明確差異。
+> 下表「實測」欄是舊的 bench 數字，依 D6 不當公開依據，保留作為參考。
 
 預設值就是實測後的建議值，不用編輯 config。一行安裝：
 

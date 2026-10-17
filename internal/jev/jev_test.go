@@ -3,9 +3,14 @@ package jev
 import (
 	"context"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -59,5 +64,41 @@ func TestRetriesOn429ThenFailsOn422(t *testing.T) {
 func TestNoKey(t *testing.T) {
 	if _, err := (&Client{}).Ask(context.Background(), "s", nil); !errors.Is(err, ErrNoKey) {
 		t.Fatal(err)
+	}
+}
+
+func TestPlatformVerifyFailureRetriesWithPEMBundle(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	pemFile := filepath.Join(t.TempDir(), "cert.pem")
+	os.WriteFile(pemFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw}), 0o644)
+	oldFile, oldPred := fallbackRootsFile, platformVerifyFailed
+	defer func() {
+		fallbackRootsFile, platformVerifyFailed = oldFile, oldPred
+		fallbackOnce, fallbackPool = sync.Once{}, nil
+	}()
+	reset := func(file string) { fallbackRootsFile, fallbackOnce, fallbackPool = file, sync.Once{}, nil }
+	c := &Client{Endpoint: srv.URL, Key: "k", HTTP: &http.Client{}}
+
+	// The test server's certificate is unknown to the system, standing in for
+	// the locked-screen failure; the bundle trusts it.
+	platformVerifyFailed = func(err error) bool { return strings.Contains(err.Error(), "x509:") }
+	reset(pemFile)
+	if _, err := c.Ask(context.Background(), nil, nil); err != nil {
+		t.Fatalf("fallback not used: %v", err)
+	}
+	// Any other verification failure is not retried.
+	platformVerifyFailed = func(error) bool { return false }
+	reset(pemFile)
+	if _, err := c.Ask(context.Background(), nil, nil); err == nil || !strings.Contains(err.Error(), "x509:") {
+		t.Fatalf("want the original error, got %v", err)
+	}
+	// No readable bundle: the original error stands.
+	platformVerifyFailed = func(err error) bool { return strings.Contains(err.Error(), "x509:") }
+	reset(filepath.Join(t.TempDir(), "missing.pem"))
+	if _, err := c.Ask(context.Background(), nil, nil); err == nil {
+		t.Fatal("want an error without a bundle")
 	}
 }

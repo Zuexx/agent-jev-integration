@@ -76,3 +76,13 @@
 
 - 兩個 Pro 帳號：main（`~/.claude`）與 claude-2（`~/.claude-2`，每週三 20:00 重置）。評測主要用 claude-2，每週保留 30%。
 - shell 的 `claude` 是 cswitch 的包裝函式；要跑 Claude Code 本身的子指令（如 `setup-token`）用 `command claude`。
+
+## 2026-10-18
+
+### 進度：評測 P1、P2 完成（D4），依結果調整（D9）
+
+- 報告：`docs/eval-report.md`。P2 第一次作廢（螢幕鎖定後 Jev 呼叫全失敗），已重跑。人工評分只評視覺類，兩輪（使用者、第三方）。
+- 採用 D9（1、2、3）；D3 仍待 P3。
+- 未跑：P3（subagent 工具全開 vs 限制，約 126 次＋63 對評審，約 1 天、claude-2 週額度約 22%）、P4（補充，約 149 次＋約 100 對）。
+- 評測資料在 `~/.jevcc-bench/results/`（p1、p2b、p12b＝合併檔與評審、p12/rate-round1＝第 1 輪人工、p12/rate.html＝第 2 輪）。
+- 背景跑評測時螢幕不可鎖定、不可闔蓋（D9 第 3 條修好前的教訓；修好後仍建議如此）。

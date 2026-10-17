@@ -219,7 +219,7 @@ func Activity(s Session) string {
 	if s.Screened > 0 {
 		parts = append(parts, fmt.Sprintf("inject %d/%d warned", s.Warned, s.Screened))
 	}
-	add(s.Errors, "⚠ %d timeouts")
+	add(s.Errors, "⚠ %d Jev errors")
 	if s.CostUSD > 0 {
 		parts = append(parts, fmt.Sprintf("jev $%.4f", s.CostUSD))
 	}
