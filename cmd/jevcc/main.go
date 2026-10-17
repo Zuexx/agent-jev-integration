@@ -154,6 +154,8 @@ func cmdInstall(which string, args []string) int {
 	model := fset.String("default-model", "", "also set Claude Code's default model in that scope (e.g. haiku)")
 	onDefault := fset.Bool("on-by-default", false, "turn Jev routing on in every new session")
 	sline := fset.Bool("statusline", true, "add a jev line under the existing statusline")
+	agentMCP := fset.Bool("agent-mcp", false, "give jev-haiku/sonnet/opus every session tool, MCP and Skill included (agent_mcp; default off)")
+	guard := fset.Bool("guard", false, "turn on the risky command/write check (guard; default off)")
 	if err := fset.Parse(args); err != nil {
 		return 2
 	}
@@ -162,7 +164,11 @@ func cmdInstall(which string, args []string) int {
 		return fail(err)
 	}
 	abs, _ := filepath.Abs(*dir)
-	o := install.Options{Scope: s, Dir: abs, Out: os.Stdout, Now: time.Now(), DefaultModel: *model, OnByDefault: *onDefault, Statusline: *sline}
+	o := install.Options{Scope: s, Dir: abs, Out: os.Stdout, Now: time.Now(), DefaultModel: *model, OnByDefault: *onDefault, Statusline: *sline,
+		AgentMCP: *agentMCP, Guard: *guard}
+	if cfg, err := config.Load(); err == nil && cfg.AgentMCP {
+		o.AgentMCP = true // keep an earlier /jev mcp on
+	}
 	switch which {
 	case "doctor":
 		return install.Doctor(o, os.Stdout)

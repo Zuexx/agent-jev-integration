@@ -29,6 +29,11 @@ type Config struct {
 	// raised cost and time on short tasks (the main model's fixed context
 	// cost remains). Model savings come from `jevcc ask` instead.
 	Delegate bool `json:"delegate,omitempty"`
+	// AgentMCP gives jev-haiku, jev-sonnet and jev-opus every tool of the
+	// session, MCP servers and Skill included, instead of the fixed list
+	// (Read, Grep, Glob, Bash, Edit, Write). Off by default; written into the
+	// agent files by `jevcc install` and /jev mcp (D3, D9).
+	AgentMCP bool `json:"agent_mcp,omitempty"`
 	// Escalate makes the hook tell a cheaper session to hand prompts that need
 	// a stronger tier to jev-<tier> (default on: 17/17 hand-offs, -96% cost).
 	Escalate *bool `json:"escalate,omitempty"`
@@ -238,7 +243,7 @@ func (c *Config) FindFilesOn() bool   { return on(c.FindFiles) }
 func (c *Config) SkillAdviceOn() bool { return on(c.SkillAdvice) }
 func (c *Config) EscalateOn() bool    { return on(c.Escalate) }
 func (c *Config) VerifyOn() bool      { return on(c.Verify) }
-func (c *Config) GuardOn() bool       { return on(c.Guard) }
+func (c *Config) GuardOn() bool       { return c.Guard != nil && *c.Guard } // off unless set (D9)
 func (c *Config) InjectionOn() bool   { return on(c.Injection) }
 
 // TraceOn is off unless set: trace records hold prompt text.

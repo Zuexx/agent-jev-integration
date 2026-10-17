@@ -228,3 +228,34 @@ func TestAgentsJSONOpenToolsDropsToolLists(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentsForMCPDropsWorkerTools(t *testing.T) {
+	for name, b := range AgentsFor(false) {
+		if !strings.Contains(string(b), "\ntools: ") {
+			t.Errorf("%s: restricted agents keep their tools line", name)
+		}
+	}
+	for name, b := range AgentsFor(true) {
+		has := strings.Contains(string(b), "\ntools: ")
+		if name == "jev-review.md" && !has {
+			t.Error("jev-review keeps its tools with mcp on")
+		}
+		if name != "jev-review.md" && has {
+			t.Errorf("%s still lists tools with mcp on", name)
+		}
+	}
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "jev-haiku.md"), AgentsFor(false)["jev-haiku.md"], 0o644)
+	os.WriteFile(filepath.Join(dir, "other.md"), []byte("tools: X\n"), 0o644)
+	if n, err := WriteAgents(dir, true); err != nil || n != 1 {
+		t.Fatal(n, err)
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, "jev-haiku.md"))
+	o, _ := os.ReadFile(filepath.Join(dir, "other.md"))
+	if strings.Contains(string(b), "\ntools: ") || string(o) != "tools: X\n" {
+		t.Fatalf("rewrite wrong:\n%s\n%s", b, o)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "jev-sonnet.md")); err == nil {
+		t.Fatal("wrote an agent that was not installed")
+	}
+}

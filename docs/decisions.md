@@ -16,14 +16,14 @@
 
 ## D2 — haiku 當主導 session 的適用範圍
 
-- 日期：2026-10-14　狀態：**已決定**（暫定，D4 的評測可能修改）
+- 日期：2026-10-14　狀態：**已決定**（2026-10-18 依 D4 評測確認並加強，見 D9）
 - 內容：haiku 主導只用於規格清楚、能用測試或明確條件驗收的工作；開放式工作（影片、設計、研究、文件架構）和 MCP 多步驟操作一開始就用 sonnet 或 opus。
 - 依據：jevcc 介紹影片實驗（三種分工，見 `docs/handoff.md`）。opus 寫規格並審查、haiku 執行的組合兩輪後接近 opus 自己做；haiku 主導時方向在 opus 介入前就定了。
 - 出處：commit f814c2d。
 
 ## D3 — `jev-*` subagent 的工具限制
 
-- 日期：2026-10-15　狀態：**保留待評測**（等 D4）
+- 日期：2026-10-15　狀態：**改為使用者自選**（2026-10-18，見 D10）
 - 問題：`tools` 寫死為 `Read, Grep, Glob, Bash, Edit, Write`，拿不到 MCP 工具，也不能用 skill。
 - 查證（官方 sub-agents 文件，2026-10-15）：
   - 省略 `tools` 會繼承主對話全部工具，含 MCP 與 `Skill`；可用 `disallowedTools` 排除，`mcp__<server>__*` 可當萬用字元。
@@ -84,3 +84,30 @@
   7 題需要 MCP 或 skill 的題目）→ P3 評審（全開 vs 限制）→ P4 易題（每組 1 次）→ P4 sonnet 往上／往下／雙向的其他非易題。
   P4 的評審留到下週。估計用到 85–90%（照 P1、P2 的實際花費推算，可能有 ±30% 誤差）。
 - 為什麼：週三前能跑完 P3（回答 Q4），這週額度用不完也不會留到下週。
+
+## D9 — 依評測結果（P1、P2 重跑）調整 jevcc（2026-10-18）
+
+- 使用者採用 `docs/eval-report.md` 提案的 1、2、3：
+  1. **D2 加強**：haiku 主導只用於規格清楚、能用測試驗收的程式工作；開放式與視覺類一開始就用 opus（或 sonnet）主導，也不要用
+     「haiku＋往上升級」替代（花費約 haiku 的 11 倍、opus 的一半，品質大多仍輸 opus 主導）。README 的建議設定加上說明。
+  2. **往下委派維持選用**：opus 主導開委派品質不變，只有程式類明確省錢（約 −16%），整體 −6% 無明確差異；README 寫清楚。
+  3. **修 Jev 呼叫的 TLS 失敗**：macOS 螢幕鎖定後 Go 的系統憑證驗證失敗（`x509: OSStatus -26276`），hook 靜默失效（P2 第一次
+     因此作廢）。只在這個錯誤時改用 `/etc/ssl/cert.pem` 再試一次；狀態列的錯誤標示由「timeouts」改為「Jev errors」。
+- 依據：`docs/eval-report.md`；P2 第一次作廢的經過見 `docs/eval-plan.md` 變更紀錄。
+- 驗證（計畫第 12 節）：第 3 條以單元測試（模擬系統驗證失敗、改用 PEM bundle）與實機確認（`/etc/ssl/cert.pem` 可驗證
+  api.typesafe.ai）；鎖定螢幕下的實測待下次背景執行。第 1、2 條只改文件與建議，不改行為，沒有可在新題目上驗證的程式變更。
+- D3 維持待評測（P3 未跑）。
+
+## D10 — 不跑 P3、P4；subagent 用 MCP 與 guard 改成使用者自選、預設關（2026-10-18）
+
+- 使用者決定：P3（subagent 工具全開 vs 限制）與 P4（補充）不跑。D3 不靠評測定案，改成開關讓使用者自己選。
+- `agent_mcp`（`/jev mcp on|off`、`jevcc install --agent-mcp`）：開啟時 jev-haiku／jev-sonnet／jev-opus 的檔案拿掉 `tools`，
+  繼承主對話全部工具（含 MCP 與 Skill）；jev-review 不變。預設關（即原本的限制）。只改寫 jevcc 安裝在使用者範圍的 agent
+  檔，新對話才生效；plugin 安裝的 agent 是固定檔，維持限制。
+- `guard`（`/jev guard on|off`、`jevcc install --guard`）：預設由開改為關。
+- 已知取捨：
+  - guard 改預設關後，沒有在設定裡寫 `"guard": true` 的既有使用者會失去危險動作確認（原本預設開）；它只會要求確認、不會擋，
+    關掉後 Claude Code 自己的權限提示仍在。換來每次 Bash／寫檔少一次 Jev 呼叫（延遲與花費）。
+  - agent_mcp 開啟後 subagent 能用 MCP 與 skill（冒煙測試中受限的 subagent 改用命令列 Blender 或 Bash 讀 skill 繞過），
+    但也能用主對話所有 MCP 的寫入類工具；`AskUserQuestion` 等仍會被 Claude Code 從 subagent 移除。
+- D3 狀態：由這條取代（不再待評測）。

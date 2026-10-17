@@ -5,15 +5,19 @@ package jev
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -145,13 +149,21 @@ func (c *Client) Ask(ctx context.Context, state any, qs map[string]Question) (*R
 }
 
 func (c *Client) once(ctx context.Context, hc *http.Client, body []byte) (*Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.Endpoint, "/")+"/v1/systemone", bytes.NewReader(body))
-	if err != nil {
-		return nil, err
+	do := func(hc *http.Client) (*http.Response, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.Endpoint, "/")+"/v1/systemone", bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+c.Key)
+		req.Header.Set("Content-Type", "application/json")
+		return hc.Do(req)
 	}
-	req.Header.Set("Authorization", "Bearer "+c.Key)
-	req.Header.Set("Content-Type", "application/json")
-	res, err := hc.Do(req)
+	res, err := do(hc)
+	if err != nil && platformVerifyFailed(err) {
+		if fc := fallbackClient(hc); fc != nil {
+			res, err = do(fc)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -172,6 +184,42 @@ func (c *Client) once(ctx context.Context, hc *http.Client, body []byte) (*Respo
 		return nil, fmt.Errorf("typesafe: bad response: %w", err)
 	}
 	return &out, nil
+}
+
+// On macOS, Go verifies certificates through the system Security framework,
+// which fails with "x509: OSStatus -26276" while the screen is locked, so
+// every Jev call from a background session failed (docs/eval-plan.md change
+// log, 2026-10-17). Such a failure is retried once against the PEM bundle
+// macOS ships, verified by Go itself. Other verification errors are not.
+var (
+	fallbackRootsFile    = "/etc/ssl/cert.pem"
+	platformVerifyFailed = func(err error) bool { return strings.Contains(err.Error(), "x509: OSStatus") }
+	fallbackOnce         sync.Once
+	fallbackPool         *x509.CertPool
+)
+
+// fallbackClient is hc trusting only the PEM bundle, or nil when the bundle
+// cannot be read or hc uses its own transport.
+func fallbackClient(hc *http.Client) *http.Client {
+	if hc.Transport != nil {
+		return nil
+	}
+	fallbackOnce.Do(func() {
+		if pem, err := os.ReadFile(fallbackRootsFile); err == nil {
+			p := x509.NewCertPool()
+			if p.AppendCertsFromPEM(pem) {
+				fallbackPool = p
+			}
+		}
+	})
+	if fallbackPool == nil {
+		return nil
+	}
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.TLSClientConfig = &tls.Config{RootCAs: fallbackPool}
+	fc := *hc
+	fc.Transport = t
+	return &fc
 }
 
 type retryAfter struct {
