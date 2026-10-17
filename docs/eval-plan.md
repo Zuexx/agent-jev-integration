@@ -339,3 +339,9 @@ Q3 → 往下派工是否預設開啟；Q4 → D3（`jev-*` 的工具設定）�
     相同、備註也帶入），無法分辨是否獨立評分；檔案留存為 `rate-round1/ratings-outsider-contaminated.json`，不採用。
     修正：每份頁面的進度鍵改為依抽樣內容產生（`jevcc-rate:<hash>`）。第 2 輪頁面重新產生（同樣 20 份）。
   - 週額度：見 decisions.md D8（本週不保留 30%）。
+- 2026-10-17：**P2 作廢（發現於分析時）**：P2 的 108 次中，Jev hook 只有 3 次真的拿到 Jev 的判斷；其餘 105 次呼叫 Jev API 失敗，
+  99 次是 `tls: failed to verify certificate: x509: OSStatus -26276`（macOS 上 Go 用系統 Security framework 驗證憑證，
+  螢幕鎖定後失敗；白天的冒煙測試 39/40 正常），其餘是逾時與 DNS 失敗（斷網）。hook 失敗時不給建議，所以 haiku/up 只有
+  3 次觸發 Stop review、0 次升級；opus/down 0 次往下派工。P2 量到的是「Jev 沒在運作」，不能回答 Q2、Q3；先前根據 P2
+  的初步結論全部撤回。bench 的有效性檢查只看「hook 有沒有紀錄」，錯誤也算紀錄，所以沒擋下來；之後要把「每次 Jev 呼叫都失敗」
+  的執行判為無效。P1 不用 Jev，不受影響。已中止的 week.sh 第 1 步（探索性評審，26 對）同樣作廢。
