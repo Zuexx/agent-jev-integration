@@ -1,0 +1,16 @@
+Release: v2.4.0
+Date: 2026-10-12
+Commits since v2.3.0 (newest first):
+
+a91f3c2 feat(search): search inside attachments (NOTE-412)
+77d0e19 fix(sync): notes edited offline were duplicated after reconnect (NOTE-398)
+c3b2a10 chore: bump golangci-lint to 1.61
+f0e9d44 feat!: notes API v1 removed, use v2 (NOTE-377)
+4e8a1b0 deps: bump github.com/jackc/pgx/v5 to 5.7.1
+9c1d2e3 test: flaky export test retried
+1b7f6a8 fix(editor): cursor jumped to the end when pasting a table (NOTE-405)
+6d5e4f3 refactor(store): split notes repository into read and write paths
+2a3b4c5 deps: bump golang.org/x/text to 0.19.0
+8f9e0d1 ci: cache go modules
+5c6d7e8 feat(share): share a notebook with a link that expires (NOTE-401)
+3e4f5a6 deps: bump github.com/redis/go-redis/v9 to 9.6.2

@@ -41,3 +41,24 @@ func TestSaveKeyKeepsOtherFields(t *testing.T) {
 		}
 	}
 }
+
+// The bench needs delegation down without escalation up (and the reverse),
+// so JEVCC_ESCALATE must win over what JEVCC_DELEGATE implies.
+func TestEscalateEnvOverridesDelegate(t *testing.T) {
+	t.Setenv("JEVCC_HOME", t.TempDir())
+	t.Setenv("JEVCC_DELEGATE", "agent")
+	t.Setenv("JEVCC_ESCALATE", "0")
+	c, err := Load()
+	if err != nil || !c.Delegate || c.EscalateOn() {
+		t.Fatal(c.Delegate, c.EscalateOn(), err)
+	}
+	t.Setenv("JEVCC_DELEGATE", "off")
+	t.Setenv("JEVCC_ESCALATE", "1")
+	if c, _ = Load(); c.Delegate || !c.EscalateOn() {
+		t.Fatal(c.Delegate, c.EscalateOn())
+	}
+	t.Setenv("JEVCC_ESCALATE", "")
+	if c, _ = Load(); c.EscalateOn() {
+		t.Fatal("JEVCC_DELEGATE=off alone should still turn escalation off")
+	}
+}

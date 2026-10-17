@@ -1,0 +1,10 @@
+{
+ "question": "這份 release notes 能不能直接發布？",
+ "options": [
+  {"score": 1, "label": "沒照團隊格式（像一般的 changelog），發布機器人會退件"},
+  {"score": 2, "label": "大致照格式，但有分錯類或把 chore/ci/test 也寫進去"},
+  {"score": 3, "label": "格式對，但相依套件沒合併成一行、或留了 hash／前綴等小違規"},
+  {"score": 4, "label": "完全照格式，文字對使用者稍嫌生硬"},
+  {"score": 5, "label": "完全照格式，每一條都寫成使用者看得懂的句子，可直接發布"}
+ ]
+}

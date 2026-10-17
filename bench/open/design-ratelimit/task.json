@@ -1,0 +1,7 @@
+{
+ "category": "design",
+ "prompt": "Read README.md, requirements.md and network.md, and write the rate limiter design to docs/design/rate-limit.md with the sections Context, Options, Decision, Trade-offs and Failure modes.",
+ "check": "python3 -I \"$TASK_DIR/check.py\"",
+ "tier": "opus",
+ "timeout_s": 600
+}

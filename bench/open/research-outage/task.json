@@ -1,0 +1,8 @@
+{
+ "category": "research",
+ "variant": "vague",
+ "prompt": "Customers say our API was down on the morning of March 4. Everything we have is in incident/. Figure out what actually happened and write findings.md for the team.",
+ "check": "python3 -I \"$TASK_DIR/check.py\"",
+ "tier": "sonnet",
+ "timeout_s": 600
+}

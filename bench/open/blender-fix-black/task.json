@@ -1,0 +1,8 @@
+{
+ "category": "blender",
+ "prompt": "Renders of scene.blend come out completely black. Use the Blender tools to find out why, fix the scene so the render shows the robot, and render it to renders/fixed.png.",
+ "check": "python3 -I \"$TASK_DIR/check.py\"",
+ "mcp": ["blender"],
+ "tier": "sonnet",
+ "timeout_s": 900
+}

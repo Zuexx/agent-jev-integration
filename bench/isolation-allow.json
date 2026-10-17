@@ -1,0 +1,35 @@
+{
+  "plugins": [
+    "cc-plugin-agents-md",
+    "cc-plugin-plugin-authoring",
+    "cc-plugin-telemetry"
+  ],
+  "agents": [
+    "Explore",
+    "Plan",
+    "claude",
+    "general-purpose",
+    "statusline-setup"
+  ],
+  "skills": [
+    "batch",
+    "claude-api",
+    "code-review",
+    "dataviz",
+    "debug",
+    "deep-research",
+    "design",
+    "design-sync",
+    "doctor",
+    "fewer-permission-prompts",
+    "loop",
+    "plugin-authoring",
+    "run",
+    "run-skill-generator",
+    "schedule",
+    "simplify",
+    "update-config",
+    "verify",
+    "workflow-authoring"
+  ]
+}

@@ -1,0 +1,8 @@
+{
+ "category": "video",
+ "prompt": "Using the Remotion project here, make a 20-second 1280x720 30 fps intro video for Tidy (see README.md): a title card, one scene per feature with an on-screen caption, and an end card showing the website. Render it to out/intro.mp4.",
+ "check": "python3 -I \"$TASK_DIR/check.py\"",
+ "cache": ["remotion-4.0.531"],
+ "tier": "sonnet",
+ "timeout_s": 1500
+}

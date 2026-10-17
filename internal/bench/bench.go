@@ -15,10 +15,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
 )
+
+// JevDownPrefix starts the error of a run in which every Jev call failed.
+const JevDownPrefix = "jev: every call failed: "
 
 // Task is bench/tasks/<name>/task.json; fixture/ next to it is copied into a
 // fresh directory for every run.
@@ -33,6 +37,18 @@ type Task struct {
 	// name in the work dir) instead of fixture/, e.g. parts of this repo for
 	// code-navigation tasks.
 	FixtureFrom []string `json:"fixture_from,omitempty"`
+	// Category groups tasks in the report (docs/eval-plan.md 3.1); Variant
+	// "vague" marks the open-direction tasks (category H in the plan).
+	Category string `json:"category,omitempty"`
+	Variant  string `json:"variant,omitempty"`
+	// MCP names the servers (from Runner.MCPServers) the task needs.
+	MCP []string `json:"mcp,omitempty"`
+	// Cache names directories under Runner.CacheDir whose contents are
+	// copied into the work directory (e.g. an offline node_modules).
+	Cache []string `json:"cache,omitempty"`
+	// Skills are directories under the task's skills/ that an isolated run
+	// installs into its CLAUDE_CONFIG_DIR, for tasks that need a skill.
+	Skills []string `json:"skills,omitempty"`
 }
 
 const (
@@ -54,6 +70,43 @@ const (
 	ArmEscalateVerify = "escalate+verify"
 )
 
+// ParseLeadArm reads "<lead>/<direction>[/open]" (docs/eval-plan.md 2.1):
+// the lead model, then Jev off, or on with delegation up (jevcc's defaults:
+// escalate plus Stop review), down (delegate to cheaper jev-* agents) or
+// both; "/open" gives the jev-* subagents every tool.
+func ParseLeadArm(arm string) (lead, dir string, open, ok bool) {
+	parts := strings.Split(arm, "/")
+	if len(parts) < 2 || len(parts) > 3 || (len(parts) == 3 && parts[2] != "open") {
+		return "", "", false, false
+	}
+	switch parts[0] {
+	case "opus", "sonnet", "haiku":
+	default:
+		return "", "", false, false
+	}
+	switch parts[1] {
+	case "off", "up", "down", "both":
+	default:
+		return "", "", false, false
+	}
+	return parts[0], parts[1], len(parts) == 3, true
+}
+
+// LeadArmApplicable is false for combinations with nowhere to delegate:
+// opus has nothing stronger, haiku nothing cheaper (plan 2.2).
+func LeadArmApplicable(arm string) bool {
+	lead, dir, _, ok := ParseLeadArm(arm)
+	switch {
+	case !ok:
+		return false
+	case lead == "opus" && (dir == "up" || dir == "both"):
+		return false
+	case lead == "haiku" && (dir == "down" || dir == "both"):
+		return false
+	}
+	return true
+}
+
 func without(args []string, flag string) []string {
 	var out []string
 	for _, a := range args {
@@ -62,6 +115,30 @@ func without(args []string, flag string) []string {
 		}
 	}
 	return out
+}
+
+// armAdds reads back the agents (--agents) and hook events (--settings) an
+// arm put on the command line, which an isolated run is allowed to load.
+func armAdds(args []string) (agents, events []string) {
+	for i := 0; i+1 < len(args); i++ {
+		switch args[i] {
+		case "--agents":
+			var m map[string]any
+			json.Unmarshal([]byte(args[i+1]), &m)
+			for k := range m {
+				agents = append(agents, k)
+			}
+		case "--settings":
+			var s struct {
+				Hooks map[string]any `json:"hooks"`
+			}
+			json.Unmarshal([]byte(args[i+1]), &s)
+			for k := range s.Hooks {
+				events = append(events, k)
+			}
+		}
+	}
+	return agents, events
 }
 
 func hookSettings(cmd string, events ...string) string {
@@ -74,24 +151,75 @@ func hookSettings(cmd string, events ...string) string {
 }
 
 type Run struct {
-	Task      string             `json:"task"`
-	Arm       string             `json:"arm"`
-	Rep       int                `json:"rep"`
-	Model     string             `json:"model"` // --model passed to claude
-	Pass      bool               `json:"pass"`
-	CheckOut  string             `json:"check_output,omitempty"`
-	ClaudeUSD float64            `json:"claude_cost_usd"`
-	JevUSD    float64            `json:"jev_cost_usd"`
-	DurMS     int64              `json:"duration_ms"`
-	Turns     int                `json:"num_turns"`
-	Subagents int                `json:"subagents"`
-	ModelUSD  map[string]float64 `json:"model_cost_usd"`
-	Tokens    int                `json:"tokens"`
-	SessionID string             `json:"session_id"`
-	Error     string             `json:"error,omitempty"`
+	Task      string  `json:"task"`
+	Arm       string  `json:"arm"`
+	Rep       int     `json:"rep"`
+	Model     string  `json:"model"` // --model passed to claude
+	Pass      bool    `json:"pass"`
+	CheckOut  string  `json:"check_output,omitempty"`
+	ClaudeUSD float64 `json:"claude_cost_usd"`
+	JevUSD    float64 `json:"jev_cost_usd"`
+	// What the hook recorded for this session (hook arms): prompts judged,
+	// Jev errors or timeouts, and the advice kinds it gave.
+	JevDecisions int                `json:"jev_decisions,omitempty"`
+	JevErrors    []string           `json:"jev_errors,omitempty"`
+	JevAdvice    []string           `json:"jev_advice,omitempty"`
+	DurMS        int64              `json:"duration_ms"`
+	Turns        int                `json:"num_turns"`
+	Subagents    int                `json:"subagents"`
+	ModelUSD     map[string]float64 `json:"model_cost_usd"`
+	Tokens       int                `json:"tokens"`
+	SessionID    string             `json:"session_id"`
+	Error        string             `json:"error,omitempty"`
+	// Isolated runs only: what Claude Code reported loading, and anything
+	// outside the allow-list (such a run is an error, not a result).
+	ClaudeVersion string `json:"claude_version,omitempty"`
+	Account       string `json:"account,omitempty"`     // which subscription token ran it
+	Build         string `json:"jevcc_build,omitempty"` // the jevcc binary that ran the hook
+	Quota         *Quota `json:"quota,omitempty"`
+	// Artifacts is where the files the run created or changed were kept,
+	// relative to the stream directory.
+	Artifacts string `json:"artifacts,omitempty"`
+	// Tools counts the lead session's tool calls by name, Spawns the
+	// subagents it started by type, SubagentTools their calls as
+	// "<type>/<tool>" (isolated runs).
+	Tools         map[string]int `json:"tools,omitempty"`
+	Spawns        map[string]int `json:"spawns,omitempty"`
+	SubagentTools map[string]int `json:"subagent_tools,omitempty"`
+	// Metrics are the check's graded measures (METRIC lines).
+	Metrics    map[string]float64 `json:"metrics,omitempty"`
+	Violations []string           `json:"isolation_violations,omitempty"`
 }
 
 func (r Run) TotalUSD() float64 { return r.ClaudeUSD + r.JevUSD }
+
+// LoadRuns reads a bench-*.jsonl results file.
+func LoadRuns(path string) ([]Run, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var out []Run
+	for _, line := range bytes.Split(b, []byte("\n")) {
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		var r Run
+		if err := json.Unmarshal(line, &r); err != nil {
+			return out, fmt.Errorf("%s: %w", path, err)
+		}
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+// JevUse is the hook's own record of one session.
+type JevUse struct {
+	USD       float64
+	Decisions int
+	Errors    []string
+	Advice    []string
+}
 
 func LoadTasks(dir string, only []string) ([]Task, error) {
 	want := map[string]bool{}
@@ -148,37 +276,144 @@ func CopyTree(src, dst string) error {
 	})
 }
 
-// Runner holds what one run needs; Pick and JevCost are injected by main.
+// Runner holds what one run needs; Pick and JevUse are injected by main.
 type Runner struct {
 	Claude    string
 	MainModel string
 	HookCmd   string // shell command for the UserPromptSubmit hook in the hook arm
 	Agents    string // --agents JSON for the delegate-agent arm
-	MaxUSD    float64
+	// AgentsOpen is Agents without tool lists (lead arms ending in /open).
+	AgentsOpen string
+	MaxUSD     float64
 	// Pick returns the model for the route arm and Jev's cost for that decision.
 	Pick func(ctx context.Context, prompt string) (model string, jevUSD float64, err error)
-	// JevCost sums the hook's Jev cost for a session (from the decisions logs).
-	JevCost func(sessionID string) float64
+	// JevUse reads what the hook recorded for a session from the decisions
+	// logs in jevHome ("" = the evaluator's own state directory).
+	JevUse func(sessionID, jevHome string) JevUse
+	// Isolate runs claude in a throwaway HOME / CLAUDE_CONFIG_DIR / JEVCC_HOME
+	// with stream-json output, and checks its init event against Allow.
+	Isolate bool
+	Allow   Allow
+	PassEnv []string // added to an isolated run's environment (credentials)
+	SaveDir string   // keeps each isolated run's stream here when set
+	// MCPServers are the MCP server configs tasks can ask for, by name.
+	MCPServers map[string]any
+	CacheDir   string // where Task.Cache entries live
+	// Effort is passed as --effort to every run (docs/eval-plan.md 4.1), so
+	// no arm depends on a model's or the CLI's default.
+	Effort string
 }
 
-func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
-	res := Run{Task: t.Name, Arm: arm, Rep: rep, Model: r.MainModel}
+// newWork copies the task's fixture into a fresh directory.
+func newWork(t Task) (string, error) {
 	work, err := os.MkdirTemp("", "jevcc-bench-"+t.Name+"-")
 	if err != nil {
-		res.Error = err.Error()
-		return res
+		return "", err
 	}
-	defer os.RemoveAll(work)
 	if len(t.FixtureFrom) == 0 {
 		if err := CopyTree(filepath.Join(t.Dir, "fixture"), work); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			res.Error = err.Error()
-			return res
+			os.RemoveAll(work)
+			return "", err
 		}
 	}
 	for _, p := range t.FixtureFrom {
 		src := filepath.Join(t.Dir, p)
 		if err := CopyTree(src, filepath.Join(work, filepath.Base(src))); err != nil {
-			res.Error = err.Error()
+			os.RemoveAll(work)
+			return "", err
+		}
+	}
+	return work, nil
+}
+
+// cloneInto copies the contents of src into dst. On macOS cp -c clones on
+// APFS, so a large node_modules costs no time or space.
+func cloneInto(src, dst string) error {
+	if runtime.GOOS == "darwin" {
+		if err := exec.Command("cp", "-cR", src+"/.", dst).Run(); err == nil {
+			return nil
+		}
+	}
+	return CopyTree(src, dst)
+}
+
+// saveChanged copies the files in work that are new or differ from the
+// task's fixture into dst and returns how many it copied.
+func saveChanged(t Task, work, dst string) (int, error) {
+	n := 0
+	err := filepath.WalkDir(work, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == "node_modules" || d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel, _ := filepath.Rel(work, p)
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return nil
+		}
+		if old, err := os.ReadFile(filepath.Join(t.Dir, "fixture", rel)); err == nil && bytes.Equal(old, b) {
+			return nil
+		}
+		target := filepath.Join(dst, rel)
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		n++
+		return os.WriteFile(target, b, 0o644)
+	})
+	return n, err
+}
+
+// runCheck runs the task's check in work and returns whether it passed,
+// its output, and the METRIC lines it printed.
+func runCheck(ctx context.Context, t Task, work string) (bool, string, map[string]float64) {
+	check := exec.CommandContext(ctx, "sh", "-c", t.Check)
+	check.Dir = work
+	// TASK_DIR lets a check copy hidden tests that the agent never saw.
+	check.Env = append(os.Environ(), "TASK_DIR="+t.Dir)
+	co, cerr := check.CombinedOutput()
+	return cerr == nil, string(co), parseMetrics(string(co))
+}
+
+// parseMetrics reads "METRIC name=value" lines, which a check prints for
+// graded measures (e.g. how many hidden risks a plan names) besides pass/fail.
+func parseMetrics(out string) map[string]float64 {
+	m := map[string]float64{}
+	for _, line := range strings.Split(out, "\n") {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(line), "METRIC ")
+		if !ok {
+			continue
+		}
+		k, v, ok := strings.Cut(strings.TrimSpace(rest), "=")
+		var f float64
+		if _, err := fmt.Sscan(v, &f); ok && err == nil && k != "" {
+			m[k] = f
+		}
+	}
+	return m
+}
+
+func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
+	res := Run{Task: t.Name, Arm: arm, Rep: rep, Model: r.MainModel}
+	work, err := newWork(t)
+	if err != nil {
+		res.Error = err.Error()
+		return res
+	}
+	defer os.RemoveAll(work)
+	for _, c := range t.Cache {
+		src := filepath.Join(r.CacheDir, c)
+		if _, err := os.Stat(src); err != nil {
+			res.Error = "cache " + c + " missing in " + r.CacheDir + " (see bench/open/_lib/prepare-*-cache.sh)"
+			return res
+		}
+		if err := cloneInto(src, work); err != nil {
+			res.Error = "cache " + c + ": " + err.Error()
 			return res
 		}
 	}
@@ -190,6 +425,33 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 		args = append(args, "--max-budget-usd", fmt.Sprint(r.MaxUSD))
 	}
 	var extraEnv []string
+	if lead, dir, open, ok := ParseLeadArm(arm); ok {
+		res.Model = lead
+		if dir != "off" {
+			mode = "on"
+			agents := r.Agents
+			if open {
+				agents = r.AgentsOpen
+			}
+			args = append(args, "--agents", agents)
+			events := []string{"UserPromptSubmit"}
+			extraEnv = append(extraEnv, "JEVCC_MAIN="+lead)
+			switch dir {
+			case "up":
+				extraEnv = append(extraEnv, "JEVCC_DELEGATE=off", "JEVCC_ESCALATE=1", "JEVCC_VERIFY=1")
+			case "down":
+				extraEnv = append(extraEnv, "JEVCC_DELEGATE=agent", "JEVCC_ESCALATE=0", "JEVCC_VERIFY=0")
+			case "both":
+				extraEnv = append(extraEnv, "JEVCC_DELEGATE=agent", "JEVCC_ESCALATE=1", "JEVCC_VERIFY=1")
+			}
+			if dir != "down" {
+				// The Stop review reads the transcript, so it must be written.
+				events = append(events, "Stop")
+				args = without(args, "--no-session-persistence")
+			}
+			args = append(args, "--settings", hookSettings(r.HookCmd, events...))
+		}
+	}
 	switch arm {
 	case ArmHaiku:
 		res.Model = "haiku"
@@ -235,10 +497,54 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 		}
 		res.Model, res.JevUSD = m, usd
 	}
+	base := os.Environ()
+	var sb sandbox
+	if r.Isolate {
+		if sb, err = newSandbox(); err != nil {
+			res.Error = err.Error()
+			return res
+		}
+		// JEVCC_BENCH_KEEP=1 leaves the sandbox for inspection.
+		if os.Getenv("JEVCC_BENCH_KEEP") == "" {
+			defer os.RemoveAll(sb.Root)
+		}
+		base = sb.env(base, r.PassEnv)
+		for _, s := range t.Skills {
+			if err := CopyTree(filepath.Join(t.Dir, "skills", s), filepath.Join(sb.ConfigDir, "skills", s)); err != nil {
+				res.Error = "skill " + s + ": " + err.Error()
+				return res
+			}
+		}
+		for i := range args {
+			if args[i] == "--output-format" {
+				args[i+1] = "stream-json"
+			}
+		}
+		// No web: tasks ship their data, and fetched pages would make runs
+		// irreproducible (docs/eval-plan.md 4.1).
+		args = append(args, "--verbose", "--strict-mcp-config", "--disallowedTools", "WebSearch", "WebFetch")
+	}
+	if len(t.MCP) > 0 {
+		servers := map[string]any{}
+		for _, name := range t.MCP {
+			cfg, ok := r.MCPServers[name]
+			if !ok {
+				res.Error = "task needs MCP server " + name + ", which is not configured (for blender: set BLENDER)"
+				return res
+			}
+			servers[name] = cfg
+		}
+		b, _ := json.Marshal(map[string]any{"mcpServers": servers})
+		args = append(args, "--mcp-config", string(b))
+	}
+	agents, events := armAdds(args)
+	if r.Effort != "" {
+		args = append(args, "--effort", r.Effort)
+	}
 	args = append(args, "--model", res.Model, t.Prompt)
 	cmd := exec.CommandContext(ctx, r.Claude, args...)
 	cmd.Dir = work
-	cmd.Env = append(os.Environ(), "JEVCC_MODE="+mode)
+	cmd.Env = append(base, "JEVCC_MODE="+mode)
 	if delegate != "" {
 		cmd.Env = append(cmd.Env, "JEVCC_DELEGATE="+delegate)
 	}
@@ -248,6 +554,25 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 	start := time.Now()
 	out, err := cmd.Output()
 	res.DurMS = time.Since(start).Milliseconds()
+	// Lead arms contain "/", which must not become a directory level.
+	runName := fmt.Sprintf("%s_%s_%d_%d", t.Name, strings.ReplaceAll(arm, "/", "-"), rep, time.Now().UnixNano())
+	if r.Isolate {
+		if r.SaveDir != "" {
+			os.WriteFile(filepath.Join(r.SaveDir, runName+".jsonl"), out, 0o600)
+		}
+		in, hooks, result := parseStream(out)
+		if in != nil {
+			res.ClaudeVersion = in.Version
+		}
+		allow := r.Allow
+		allow.Skills = append(append([]string{}, allow.Skills...), t.Skills...)
+		allow.MCP = append(append([]string{}, allow.MCP...), t.MCP...)
+		tu := toolUses(out)
+		res.Tools, res.Spawns, res.SubagentTools = tu.Main, tu.Spawns, tu.Subagent
+		res.Violations = checkIsolation(in, hooks, sb, allow, agents, events)
+		res.Quota = parseQuota(out)
+		out = result
+	}
 	var cr struct {
 		Cost       float64 `json:"total_cost_usd"`
 		DurationMS int64   `json:"duration_ms"`
@@ -255,6 +580,7 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 		SessionID  string  `json:"session_id"`
 		IsError    bool    `json:"is_error"`
 		Subtype    string  `json:"subtype"`
+		Result     string  `json:"result"`
 		Subagents  struct {
 			Spawned int `json:"spawned"`
 		} `json:"subagent_stats"`
@@ -264,7 +590,10 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 		return res
 	}
 	if cr.IsError {
-		res.Error = "claude: " + cr.Subtype
+		res.Error = "claude: " + cr.Subtype + ": " + tail(cr.Result, 200)
+	}
+	if len(res.Violations) > 0 {
+		res.Error = "isolation: " + strings.Join(res.Violations, "; ")
 	}
 	res.ClaudeUSD, res.Turns, res.SessionID, res.Subagents = cr.Cost, cr.Turns, cr.SessionID, cr.Subagents.Spawned
 	res.ModelUSD = map[string]float64{}
@@ -279,17 +608,31 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 			res.Tokens += int(v)
 		}
 	}
-	if mode == "on" && r.JevCost != nil {
-		res.JevUSD = r.JevCost(cr.SessionID)
+	if mode == "on" && r.JevUse != nil {
+		u := r.JevUse(cr.SessionID, sb.JevHome)
+		res.JevUSD, res.JevDecisions, res.JevErrors, res.JevAdvice = u.USD, u.Decisions, u.Errors, u.Advice
+		// A clean sandbox with no record means the hook never ran.
+		if r.Isolate && u.Decisions == 0 && len(u.Errors) == 0 && res.Error == "" {
+			res.Error = "jev: the hook recorded nothing"
+		}
+		// Every call failing means the arm ran without Jev: the run measures
+		// nothing about Jev, so it is invalid (and redone on --resume).
+		if u.Decisions == 0 && len(u.Errors) > 0 && res.Error == "" {
+			res.Error = JevDownPrefix + u.Errors[0]
+		}
 	}
-	check := exec.CommandContext(ctx, "sh", "-c", t.Check)
-	check.Dir = work
-	// TASK_DIR lets a check copy hidden tests that the agent never saw.
-	check.Env = append(os.Environ(), "TASK_DIR="+t.Dir)
-	co, cerr := check.CombinedOutput()
-	res.Pass = cerr == nil
+	// Keep what the run produced, before the check adds its own files, for
+	// the judge and the human rating.
+	if r.SaveDir != "" {
+		dst := filepath.Join(r.SaveDir, "artifacts", runName)
+		if n, err := saveChanged(t, work, dst); err == nil && n > 0 {
+			res.Artifacts = filepath.Join("artifacts", runName)
+		}
+	}
+	var co string
+	res.Pass, co, res.Metrics = runCheck(ctx, t, work)
 	if !res.Pass {
-		res.CheckOut = tail(string(co), 400)
+		res.CheckOut = tail(co, 400)
 	}
 	return res
 }

@@ -1,0 +1,8 @@
+{
+ "category": "skill",
+ "prompt": "Write the release notes for v2.4.0 from changes.txt.",
+ "check": "python3 -I \"$TASK_DIR/check.py\"",
+ "skills": ["release-notes"],
+ "tier": "haiku",
+ "timeout_s": 300
+}

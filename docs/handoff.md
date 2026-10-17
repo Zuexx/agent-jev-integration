@@ -36,7 +36,10 @@
   `mcpServers` 欄位對 plugin subagent 無效；`AskUserQuestion` 會被平台從所有 subagent 移除，
   「不能問使用者」只能靠 prompt 要它把問題寫進報告。拿掉 `tools` 時要一併改 `install.AgentsJSON()`，
   否則會送出 `"tools": [""]`。怎麼改還沒定，見 `docs/decisions.md` 的 D3。
-- Stop review 只在改了程式碼時才跑（`not_code` 跳過）。影片、文件等非程式碼產出沒有人驗收。
+- Stop review 的觸發條件是「這一回合用了 Write/Edit/MultiEdit/NotebookEdit」（`verify.Turn.EditedCode`，名稱有誤導），
+  不看檔案類型：markdown 計畫、Remotion 的 .tsx 也會被審查（試跑中 jev-review 曾以 6 次 Edit 重寫 haiku 的計畫）。
+  反過來，只經由 Bash 或 MCP 產出的成品（Blender 場景與渲染、指令產生的檔案）不會被審查。
+  2026-10-15 更正；評測期間不改這個行為，以免評測對象變動。
 
 ### 改進點子（未做，待討論）
 
@@ -50,3 +53,26 @@
 
 - 回覆使用者用繁體中文。
 - `gh pr merge` 會被 Claude Code 的 auto mode 擋下（Merge Without Review）；要使用者明確說要合併才做。
+
+## 2026-10-15
+
+### 進度：重新評測（D4，計畫 `docs/eval-plan.md` 已登記）
+
+- 實作在 worktree `../agent-jev-integration-eval`，分支 `feat/eval-isolation`（PR 待開）。重跑步驟見 `docs/eval-howto.md`。
+- 已完成：隔離執行（暫存 HOME／CLAUDE_CONFIG_DIR／JEVCC_HOME，init 事件檢查）、`bench/open` 13 題（含 Blender、Remotion）、
+  `--validate`、Blender MCP（`jevcc blender-mcp`）、組別 `<主導>/<off|up|down|both>[/open]`、額度控管與 `--resume`、
+  盲評 `jevcc judge`、人工評分頁 `jevcc rate`、報告 `jevcc report`。
+- 下一步：端到端試跑確認整條流程 → 依計畫 9.3 跑 P1（主導模型基準線）。
+- 試跑觀察：開放式題目的確定性檢查 haiku 也幾乎全過，但成品品質差距明顯（blender-hero）；比較要靠評審與人工評分。
+
+### 這台機器上評測用到、結束後要清的東西
+
+- `~/.jevcc-bench/`：開始前的設定快照（`baseline-20261015.snap`）、claude-2 的 token、`save-token.sh`、Remotion 快取。
+  結束時：`bench/envsnap.sh snap` 再拍一次並 diff，刪掉這個目錄，到帳號設定撤銷 token。
+- Blender 4.5.14 LTS 以 brew 安裝於 `/Applications/Blender.app`（使用者同意）；是否移除由使用者決定。
+- worktree `../agent-jev-integration-eval` 在 PR 合併後移除。
+
+### 帳號
+
+- 兩個 Pro 帳號：main（`~/.claude`）與 claude-2（`~/.claude-2`，每週三 20:00 重置）。評測主要用 claude-2，每週保留 30%。
+- shell 的 `claude` 是 cswitch 的包裝函式；要跑 Claude Code 本身的子指令（如 `setup-token`）用 `command claude`。

@@ -1,0 +1,5 @@
+time_utc,service,version,action,actor
+2026-03-03T16:20:11Z,billing,v2.8.1,deploy,ci
+2026-03-04T09:14:37Z,api-gateway,v4.12,deploy,ci
+2026-03-04T09:40:02Z,api-gateway,v4.11,rollback,maria
+2026-03-04T13:05:44Z,search,v7.3,deploy,ci

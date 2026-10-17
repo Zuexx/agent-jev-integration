@@ -1,0 +1,8 @@
+{
+ "category": "planning",
+ "variant": "vague",
+ "prompt": "Our onboarding needs to get better. Look at what's in data/ and write plan.md.",
+ "check": "python3 -I \"$TASK_DIR/check.py\"",
+ "tier": "opus",
+ "timeout_s": 600
+}
