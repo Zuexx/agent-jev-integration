@@ -820,7 +820,7 @@ func cmdBench(args []string) int {
 					break
 				}
 				fmt.Fprintf(os.Stderr, "all accounts near their 5-hour limit; waiting %s\n", wait.Round(time.Minute))
-				time.Sleep(wait + 30*time.Second)
+				bench.WallSleep(wait + 30*time.Second)
 			}
 			r.PassEnv = append(append([]string{}, passEnv...), accounts[acct].env)
 		}
@@ -830,7 +830,7 @@ func cmdBench(args []string) int {
 		// of burning through the queue (failed runs are redone on --resume).
 		for tries := 0; bench.Unreachable(res) && tries < 6; tries++ {
 			fmt.Fprintf(os.Stderr, "cannot reach the API; retrying in 5 minutes … ")
-			time.Sleep(5 * time.Minute)
+			bench.WallSleep(5 * time.Minute)
 			res = r.Do(context.Background(), j.Task, j.Arm, j.Rep)
 		}
 		if bench.Unreachable(res) {
@@ -1424,6 +1424,9 @@ func cmdJudge(args []string) int {
 	compare := fset.String("compare", "", "explicit comparisons X:Y,... (default: each arm vs --baseline, and each /open arm vs its restricted twin)")
 	model := fset.String("model", "opus", "judge model")
 	tokenFile := fset.String("token-file", "", "a `claude setup-token` token file for the judge's runs")
+	claudeBin := fset.String("claude", "", "Claude Code binary (default: claude on PATH resolved to its versioned file)")
+	max7d := fset.Float64("max-7d", 0.70, "stop once the judge account's 7-day quota reaches this (docs/eval-plan.md 9.2)")
+	max5h := fset.Float64("max-5h", 0.95, "wait for the 5-hour reset once the judge account reaches this")
 	if err := fset.Parse(args); err != nil || *runsPath == "" {
 		fmt.Fprintln(os.Stderr, "usage: jevcc judge --runs bench-*.jsonl --token-file F [--compare X:Y,...]")
 		return 2
@@ -1475,11 +1478,13 @@ func cmdJudge(args []string) int {
 	if token == "" {
 		return fail(errors.New("the judge runs isolated: pass --token-file"))
 	}
-	claude, err := pinnedClaude("")
+	claude, err := pinnedClaude(*claudeBin)
 	if err != nil {
 		return fail(err)
 	}
+	fmt.Fprintln(os.Stderr, "claude:", claude)
 	r := &bench.Runner{Claude: claude, PassEnv: []string{"CLAUDE_CODE_OAUTH_TOKEN=" + token}}
+	gate := &bench.QuotaGate{Max7d: *max7d, Max5h: *max5h, Accounts: 1}
 	streams := strings.TrimSuffix(*runsPath, ".jsonl") + "-streams"
 	outPath := filepath.Join(filepath.Dir(*runsPath), "judge-"+filepath.Base(*runsPath))
 	done := map[string]bool{}
@@ -1503,8 +1508,28 @@ func cmdJudge(args []string) int {
 		if _, err := os.Stat(filepath.Join(t.Dir, "rubric.md")); err != nil {
 			continue // tasks without a rubric are judged by their check alone
 		}
+		if !judgeGate(gate) {
+			break
+		}
 		fmt.Fprintf(os.Stderr, "[%d/%d] %s #%d %s vs %s … ", i+1, len(pairs), p.Task, p.Rep, p.X.Arm, p.Y.Arm)
 		v := r.Judge(context.Background(), t, p, streams, *model)
+		// A usage limit or an outage says nothing about the pair: wait and
+		// judge it again rather than record an error (up to 6 hours).
+		for tries := 0; v.Error != "" && bench.Transient(v.Error) && tries < 36; tries++ {
+			total += v.USD
+			gate.Observe(0, v.Quota)
+			fmt.Fprintf(os.Stderr, "%s; retrying in 10 minutes … ", v.Error)
+			bench.WallSleep(10 * time.Minute)
+			if !judgeGate(gate) {
+				break
+			}
+			v = r.Judge(context.Background(), t, p, streams, *model)
+		}
+		if v.Error != "" && bench.Transient(v.Error) {
+			fmt.Fprintln(os.Stderr, "still failing; stopping. Run the same command later to judge the rest.")
+			break
+		}
+		gate.Observe(0, v.Quota)
 		total += v.USD
 		fsutil.AppendJSONL(outPath, v)
 		prev = append(prev, v)
@@ -1538,14 +1563,32 @@ func cmdJudge(args []string) int {
 	return 0
 }
 
+// judgeGate waits while the judge account is at its 5-hour limit and reports
+// false once it has reached its weekly cap.
+func judgeGate(g *bench.QuotaGate) bool {
+	for {
+		a, wait, finished := g.Next(time.Now())
+		if finished {
+			fmt.Fprintf(os.Stderr, "the judge account reached %.0f%% of its 7-day quota; run the same command later to judge the rest\n", g.Max7d*100)
+			return false
+		}
+		if a >= 0 {
+			return true
+		}
+		fmt.Fprintf(os.Stderr, "judge account near its 5-hour limit; waiting %s\n", wait.Round(time.Minute))
+		bench.WallSleep(wait + 30*time.Second)
+	}
+}
+
 // cmdRate writes the blind human rating page for a bench results file
 // (docs/eval-plan.md 5.3): rate.html, rate-media/ and rate-key.json next to it.
 func cmdRate(args []string) int {
 	fset := flag.NewFlagSet("rate", flag.ContinueOnError)
 	runsPath := fset.String("runs", "", "bench-*.jsonl to sample from")
 	tasksDir := fset.String("tasks", "bench/open", "comma-separated task directories (for human.json)")
-	perTask := fset.Int("per-task", 6, "outputs to rate per task")
+	perTask := fset.Int("per-task", 6, "outputs to rate per task (whole repetitions: every arm's run of a rep)")
 	seed := fset.Int64("seed", 1, "sampling and order seed")
+	only := fset.String("only", "", "comma-separated task names to rate (default: every task with human.json)")
 	if err := fset.Parse(args); err != nil || *runsPath == "" {
 		fmt.Fprintln(os.Stderr, "usage: jevcc rate --runs bench-*.jsonl [--per-task N]")
 		return 2
@@ -1562,6 +1605,17 @@ func cmdRate(args []string) int {
 		}
 		for _, t := range ts {
 			tasks[t.Name] = t
+		}
+	}
+	if *only != "" {
+		keep := map[string]bool{}
+		for _, n := range strings.Split(*only, ",") {
+			keep[strings.TrimSpace(n)] = true
+		}
+		for n := range tasks {
+			if !keep[n] {
+				delete(tasks, n)
+			}
 		}
 	}
 	dir := filepath.Dir(*runsPath)

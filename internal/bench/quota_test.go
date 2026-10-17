@@ -48,3 +48,12 @@ func TestUnreachable(t *testing.T) {
 		t.Fatal("a run that did work, or another error, is not an outage")
 	}
 }
+
+func TestWallSleep(t *testing.T) {
+	start := time.Now()
+	WallSleep(20 * time.Millisecond)
+	if d := time.Since(start); d < 20*time.Millisecond || d > time.Second {
+		t.Fatal(d)
+	}
+	WallSleep(-time.Second) // returns at once
+}

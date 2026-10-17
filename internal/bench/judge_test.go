@@ -46,15 +46,37 @@ func TestJudgeKeepsOnlyOrderStableWinners(t *testing.T) {
 	// Reads the outputs: picks whichever side holds "good", in both orders.
 	r, task, p, streams := judgeFixture(t, `test -f A/scene.blend && exit 3
 if grep -q good A/out.txt; then w=A; else w=B; fi
-printf '{"result":"looked\\n{\\"winner\\": \\"%s\\", \\"reason\\": \\"good is better\\"}","total_cost_usd":0.5}' "$w"
+echo '{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"five_hour":{"utilization":0.4,"resetsAt":100},"seven_day":{"utilization":0.5,"resetsAt":200}}}}'
+printf '{"type":"result","result":"looked\\n{\\"winner\\": \\"%s\\", \\"reason\\": \\"good is better\\"}","total_cost_usd":0.5}' "$w"
 `)
 	v := r.Judge(context.Background(), task, p, streams, "opus")
-	if v.Error != "" || v.Winner != "haiku/off" || v.USD != 1 || len(v.Reasons) != 2 {
+	if v.Error != "" || v.Winner != "haiku/off" || v.USD != 1 || len(v.Reasons) != 2 || v.Quota == nil || v.Quota.SevenDay != 0.5 || v.Claude != "claude" {
 		t.Fatalf("%+v", v)
 	}
 	// Always says A: position bias, so the swap turns it into a tie.
-	r, task, p, streams = judgeFixture(t, `printf '{"result":"{\\"winner\\": \\"A\\", \\"reason\\": \\"first\\"}","total_cost_usd":0.1}'`)
+	r, task, p, streams = judgeFixture(t, `printf '{"type":"result","result":"{\\"winner\\": \\"A\\", \\"reason\\": \\"first\\"}","total_cost_usd":0.1}'`)
 	if v := r.Judge(context.Background(), task, p, streams, "opus"); v.Winner != "tie" {
 		t.Fatalf("%+v", v)
+	}
+}
+
+func TestJudgeUsageLimitIsTransient(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as a fake claude")
+	}
+	r, task, p, streams := judgeFixture(t, "cat <<'J'\n"+`{"type":"result","is_error":true,"result":"You've hit your session limit · resets 4pm","total_cost_usd":0}`+"\nJ\n")
+	v := r.Judge(context.Background(), task, p, streams, "opus")
+	if v.Error == "" || !Transient(v.Error) {
+		t.Fatalf("%+v", v)
+	}
+	for _, e := range []string{"judge: API Error: Can't reach the API server (ENOTFOUND)", "judge: You've hit your session limit · resets 9pm"} {
+		if !Transient(e) {
+			t.Errorf("%q should be transient", e)
+		}
+	}
+	for _, e := range []string{"no rubric.md", "judge gave no verdict: hmm"} {
+		if Transient(e) {
+			t.Errorf("%q should not be transient", e)
+		}
 	}
 }

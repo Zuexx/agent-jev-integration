@@ -45,3 +45,28 @@ func TestRatingPageIsBlind(t *testing.T) {
 		t.Fatal(string(b))
 	}
 }
+
+func TestSampleTakesWholeRepetitions(t *testing.T) {
+	taskDir := t.TempDir()
+	os.WriteFile(filepath.Join(taskDir, "human.json"), []byte(`{}`), 0o644)
+	tasks := map[string]Task{"t": {Name: "t", Dir: taskDir}}
+	var runs []Run
+	for rep := 1; rep <= 3; rep++ {
+		for _, arm := range []string{"opus/off", "sonnet/off", "haiku/off", "haiku/up", "opus/down"} {
+			runs = append(runs, Run{Task: "t", Arm: arm, Rep: rep, Artifacts: "a"})
+		}
+	}
+	sample := SampleForRating(runs, tasks, 10, 1)
+	reps := map[int]int{}
+	for _, r := range sample {
+		reps[r.Rep]++
+	}
+	if len(sample) != 10 || len(reps) != 2 {
+		t.Fatalf("want two whole repetitions: %v", reps)
+	}
+	for rep, n := range reps {
+		if n != 5 {
+			t.Errorf("rep %d has %d of 5 arms", rep, n)
+		}
+	}
+}

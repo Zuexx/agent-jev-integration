@@ -75,3 +75,17 @@ func JobKey(task, arm string, rep int) string {
 func Unreachable(r Run) bool {
 	return r.Error != "" && r.ClaudeUSD == 0 && (strings.Contains(r.Error, "reach the API") || strings.Contains(r.Error, "ENOTFOUND"))
 }
+
+// WallSleep waits until d of wall-clock time has passed. time.Sleep counts
+// only time the machine is awake (on macOS its clock stops during system
+// sleep), so a long wait for a quota reset could overshoot by hours.
+func WallSleep(d time.Duration) {
+	end := time.Now().Add(d).Round(0) // Round(0) drops the monotonic reading
+	for {
+		left := time.Until(end)
+		if left <= 0 {
+			return
+		}
+		time.Sleep(min(left, time.Minute))
+	}
+}

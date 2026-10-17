@@ -1,6 +1,7 @@
 package bench
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -38,6 +39,8 @@ type Verdict struct {
 	USD      float64  `json:"judge_cost_usd"`
 	Error    string   `json:"error,omitempty"`
 	Duration int64    `json:"duration_ms"`
+	Claude   string   `json:"claude_version,omitempty"`
+	Quota    *Quota   `json:"quota,omitempty"` // the judge account's quota after the last call
 }
 
 // Pairs matches each comparison "X:Y" by task and repetition among runs that
@@ -71,7 +74,7 @@ func Pairs(runs []Run, comparisons [][2]string) []Pair {
 // Judge runs the comparison of p. streams is the directory artifacts are
 // relative to; t gives the task prompt and rubric.md.
 func (r *Runner) Judge(ctx context.Context, t Task, p Pair, streams, model string) Verdict {
-	v := Verdict{Task: p.Task, Rep: p.Rep, ArmX: p.X.Arm, ArmY: p.Y.Arm, Model: model}
+	v := Verdict{Task: p.Task, Rep: p.Rep, ArmX: p.X.Arm, ArmY: p.Y.Arm, Model: model, Claude: filepath.Base(r.Claude)}
 	start := time.Now()
 	defer func() { v.Duration = time.Since(start).Milliseconds() }()
 	rubric, err := os.ReadFile(filepath.Join(t.Dir, "rubric.md"))
@@ -85,8 +88,11 @@ func (r *Runner) Judge(ctx context.Context, t Task, p Pair, streams, model strin
 		if !xFirst {
 			a, b = b, a
 		}
-		w, reason, usd, err := r.judgeOnce(ctx, t.Prompt, string(rubric), filepath.Join(streams, a.Artifacts), filepath.Join(streams, b.Artifacts), model)
+		w, reason, usd, q, err := r.judgeOnce(ctx, t.Prompt, string(rubric), filepath.Join(streams, a.Artifacts), filepath.Join(streams, b.Artifacts), model)
 		v.USD += usd
+		if q != nil {
+			v.Quota = q
+		}
 		if err != nil {
 			v.Error = err.Error()
 			return v
@@ -114,49 +120,82 @@ func (r *Runner) Judge(ctx context.Context, t Task, p Pair, streams, model strin
 
 var verdictRE = regexp.MustCompile(`(?s)\{[^{}]*"winner"\s*:\s*"(A|B|tie)"[^{}]*\}`)
 
-func (r *Runner) judgeOnce(ctx context.Context, prompt, rubric, dirA, dirB, model string) (winner, reason string, usd float64, err error) {
+func (r *Runner) judgeOnce(ctx context.Context, prompt, rubric, dirA, dirB, model string) (winner, reason string, usd float64, q *Quota, err error) {
 	sb, err := newSandbox()
 	if err != nil {
-		return "", "", 0, err
+		return "", "", 0, nil, err
 	}
 	defer os.RemoveAll(sb.Root)
 	ev := filepath.Join(sb.Root, "evidence")
 	for name, src := range map[string]string{"A": dirA, "B": dirB} {
 		if err := evidence(src, filepath.Join(ev, name)); err != nil {
-			return "", "", 0, err
+			return "", "", 0, nil, err
 		}
 	}
-	q := "You are a blind judge comparing two submissions for the same task. Their outputs are in A/ and B/ in the " +
+	query := "You are a blind judge comparing two submissions for the same task. Their outputs are in A/ and B/ in the " +
 		"current directory (images are PNG; videos were reduced to frames under frames/). Read everything in both before " +
 		"deciding. You do not know who made them; judge only the outputs.\n\n## The task the authors were given\n" + prompt +
 		"\n\n## Rubric\n" + rubric + "\n\nEnd your answer with one line of JSON: " +
 		`{"winner": "A" | "B" | "tie", "reason": "<one or two sentences>"}` + ". Use tie only when neither is better on the rubric."
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, r.Claude, "-p", "--output-format", "json", "--no-session-persistence", "--strict-mcp-config",
+	// stream-json rather than json: only the stream carries rate_limit_event,
+	// which the quota gate needs.
+	cmd := exec.CommandContext(ctx, r.Claude, "-p", "--output-format", "stream-json", "--verbose", "--no-session-persistence", "--strict-mcp-config",
 		"--allowedTools", "Read,Glob,Grep", "--disallowedTools", "Bash", "Edit", "Write", "WebSearch", "WebFetch", "Agent",
-		"--effort", "high", "--model", model, q)
+		"--effort", "high", "--model", model, query)
 	cmd.Dir = ev
 	cmd.Env = sb.env(os.Environ(), r.PassEnv)
 	out, err := cmd.Output()
-	var res struct {
-		Result  string  `json:"result"`
-		Cost    float64 `json:"total_cost_usd"`
-		IsError bool    `json:"is_error"`
-	}
-	if jerr := json.Unmarshal(out, &res); jerr != nil {
-		return "", "", 0, fmt.Errorf("judge: %v %q", err, tail(string(out), 300))
+	q = parseQuota(out)
+	res, ok := lastResult(out)
+	if !ok {
+		return "", "", 0, q, fmt.Errorf("judge: %v %q", err, tail(string(out), 300))
 	}
 	if res.IsError {
-		return "", "", res.Cost, fmt.Errorf("judge: %s", tail(res.Result, 200))
+		return "", "", res.Cost, q, fmt.Errorf("judge: %s", tail(res.Result, 200))
 	}
 	ms := verdictRE.FindAllString(res.Result, -1)
 	if len(ms) == 0 {
-		return "", "", res.Cost, fmt.Errorf("judge gave no verdict: %s", tail(res.Result, 200))
+		return "", "", res.Cost, q, fmt.Errorf("judge gave no verdict: %s", tail(res.Result, 200))
 	}
 	var j struct{ Winner, Reason string }
 	json.Unmarshal([]byte(ms[len(ms)-1]), &j)
-	return j.Winner, j.Reason, res.Cost, nil
+	return j.Winner, j.Reason, res.Cost, q, nil
+}
+
+type judgeResult struct {
+	Result  string  `json:"result"`
+	Cost    float64 `json:"total_cost_usd"`
+	IsError bool    `json:"is_error"`
+}
+
+// lastResult finds the final "result" event in stream-json output.
+func lastResult(out []byte) (judgeResult, bool) {
+	var res judgeResult
+	found := false
+	for _, line := range bytes.Split(out, []byte("\n")) {
+		var e struct {
+			Type string `json:"type"`
+			judgeResult
+		}
+		if json.Unmarshal(line, &e) == nil && e.Type == "result" {
+			res, found = e.judgeResult, true
+		}
+	}
+	return res, found
+}
+
+// Transient reports a judge error that says nothing about the pair: the
+// account hit its usage limit or the API could not be reached. Such pairs
+// are retried, not recorded.
+func Transient(err string) bool {
+	for _, s := range []string{"hit your session limit", "hit your weekly limit", "usage limit", "reach the API", "ENOTFOUND"} {
+		if strings.Contains(err, s) {
+			return true
+		}
+	}
+	return false
 }
 
 // evidence copies a run's artifacts for the judge: videos become six frames,

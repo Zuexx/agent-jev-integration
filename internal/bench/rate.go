@@ -50,11 +50,13 @@ type RateKeyEntry struct {
 	Run  string `json:"artifacts"`
 }
 
-// SampleForRating picks up to perTask runs per task that has human.json,
-// spread across arms, in a seeded random order.
+// SampleForRating picks up to perTask runs per task that has human.json, in
+// a seeded random order. It takes whole repetitions (every arm's run of the
+// same rep) so that rated outputs line up with the judge's pairs, which
+// compare arms on the same task and rep (docs/eval-plan.md 5.3).
 func SampleForRating(runs []Run, tasks map[string]Task, perTask int, seed int64) []Run {
 	rng := rand.New(rand.NewSource(seed))
-	byTask := map[string]map[string][]Run{}
+	byTask := map[string]map[int][]Run{}
 	for _, r := range runs {
 		t, ok := tasks[r.Task]
 		if !ok || r.Error != "" || r.Artifacts == "" {
@@ -64,9 +66,9 @@ func SampleForRating(runs []Run, tasks map[string]Task, perTask int, seed int64)
 			continue
 		}
 		if byTask[r.Task] == nil {
-			byTask[r.Task] = map[string][]Run{}
+			byTask[r.Task] = map[int][]Run{}
 		}
-		byTask[r.Task][r.Arm] = append(byTask[r.Task][r.Arm], r)
+		byTask[r.Task][r.Rep] = append(byTask[r.Task][r.Rep], r)
 	}
 	var out []Run
 	names := make([]string, 0, len(byTask))
@@ -75,28 +77,24 @@ func SampleForRating(runs []Run, tasks map[string]Task, perTask int, seed int64)
 	}
 	sort.Strings(names)
 	for _, n := range names {
-		arms := make([]string, 0, len(byTask[n]))
-		for a := range byTask[n] {
-			arms = append(arms, a)
+		reps := make([]int, 0, len(byTask[n]))
+		for rep, rs := range byTask[n] {
+			reps = append(reps, rep)
+			sort.Slice(rs, func(i, j int) bool { return rs[i].Arm < rs[j].Arm })
 		}
-		sort.Strings(arms)
-		for _, a := range arms {
-			rs := byTask[n][a]
-			rng.Shuffle(len(rs), func(i, j int) { rs[i], rs[j] = rs[j], rs[i] })
-		}
-		// Round-robin over arms so every arm is represented.
-		for i, picked := 0, 0; picked < perTask; i++ {
-			progress := false
-			for _, a := range arms {
-				if i < len(byTask[n][a]) && picked < perTask {
-					out = append(out, byTask[n][a][i])
-					picked++
-					progress = true
-				}
+		sort.Ints(reps)
+		rng.Shuffle(len(reps), func(i, j int) { reps[i], reps[j] = reps[j], reps[i] })
+		picked := 0
+		for _, rep := range reps {
+			rs := byTask[n][rep]
+			if picked > 0 && picked+len(rs) > perTask {
+				continue
 			}
-			if !progress {
-				break
+			if len(rs) > perTask-picked {
+				rs = rs[:perTask-picked]
 			}
+			out = append(out, rs...)
+			picked += len(rs)
 		}
 	}
 	rng.Shuffle(len(out), func(i, j int) { out[i], out[j] = out[j], out[i] })
