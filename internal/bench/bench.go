@@ -21,6 +21,9 @@ import (
 	"time"
 )
 
+// JevDownPrefix starts the error of a run in which every Jev call failed.
+const JevDownPrefix = "jev: every call failed: "
+
 // Task is bench/tasks/<name>/task.json; fixture/ next to it is copied into a
 // fresh directory for every run.
 type Task struct {
@@ -611,6 +614,11 @@ func (r *Runner) Do(ctx context.Context, t Task, arm string, rep int) Run {
 		// A clean sandbox with no record means the hook never ran.
 		if r.Isolate && u.Decisions == 0 && len(u.Errors) == 0 && res.Error == "" {
 			res.Error = "jev: the hook recorded nothing"
+		}
+		// Every call failing means the arm ran without Jev: the run measures
+		// nothing about Jev, so it is invalid (and redone on --resume).
+		if u.Decisions == 0 && len(u.Errors) > 0 && res.Error == "" {
+			res.Error = JevDownPrefix + u.Errors[0]
 		}
 	}
 	// Keep what the run produced, before the check adds its own files, for

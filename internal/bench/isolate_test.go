@@ -253,3 +253,25 @@ echo '{"total_cost_usd":0.1,"session_id":"S","is_error":false}'
 		t.Fatalf("off: %+v", res)
 	}
 }
+
+func TestRunWithEveryJevCallFailingIsInvalid(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as a fake claude")
+	}
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "fixture"), 0o755)
+	fake := filepath.Join(t.TempDir(), "claude")
+	os.WriteFile(fake, []byte("#!/bin/sh\necho '{\"total_cost_usd\":0.1,\"session_id\":\"S\",\"is_error\":false}'\n"), 0o755)
+	tlsErr := "tls: failed to verify certificate: x509: OSStatus -26276"
+	r := &Runner{Claude: fake, HookCmd: "jevcc hook", Effort: "medium", SaveDir: t.TempDir(),
+		JevUse: func(string, string) JevUse { return JevUse{Errors: []string{tlsErr}} }}
+	task := Task{Name: "a", Dir: dir, Prompt: "p", TimeoutS: 30, Check: "true"}
+	if res := r.Do(context.Background(), task, "haiku/up", 1); res.Error != JevDownPrefix+tlsErr {
+		t.Fatalf("all calls failed: %+v", res)
+	}
+	// One call failing among others is recorded, not fatal.
+	r.JevUse = func(string, string) JevUse { return JevUse{Decisions: 2, Errors: []string{tlsErr}} }
+	if res := r.Do(context.Background(), task, "haiku/up", 1); res.Error != "" || len(res.JevErrors) != 1 {
+		t.Fatalf("partial failure: %+v", res)
+	}
+}

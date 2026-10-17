@@ -803,6 +803,7 @@ func cmdBench(args []string) int {
 		os.MkdirAll(r.SaveDir, 0o755)
 	}
 	gate := &bench.QuotaGate{Max7d: *max7d, Max5h: *max5h, Accounts: max(len(accounts), 1)}
+	jevDown := 0
 	for i, j := range jobs {
 		if done[bench.JobKey(j.Task.Name, j.Arm, j.Rep)] {
 			continue
@@ -835,6 +836,19 @@ func cmdBench(args []string) int {
 		}
 		if bench.Unreachable(res) {
 			fmt.Fprintf(os.Stderr, "still unreachable; stopping. Continue later with --resume %s\n", rawPath)
+			goto report
+		}
+		// Jev failing every call (e.g. TLS verification after the screen
+		// locks) turns a Jev arm into a plain run; stop rather than waste quota.
+		if strings.HasPrefix(res.Error, bench.JevDownPrefix) {
+			jevDown++
+		} else if res.Error == "" {
+			jevDown = 0
+		}
+		if jevDown >= 3 {
+			fmt.Fprintf(os.Stderr, "Jev failed in 3 runs in a row (%s); stopping. Continue later with --resume %s\n", res.Error, rawPath)
+			runs = append(runs, res)
+			fsutil.AppendJSONL(rawPath, res)
 			goto report
 		}
 		res.Build = filepath.Base(self)
