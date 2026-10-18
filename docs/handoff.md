@@ -86,3 +86,14 @@
 - D11：往下委派預設開，只限程式工作（Jev 多答 `CodeQuestion`，p ≥ 0.8）。
 - 評測資料在 `~/.jevcc-bench/results/`（p1、p2b、p12b＝合併檔與評審、p12/rate-round1＝第 1 輪人工、p12/rate.html＝第 2 輪）。
 - 背景跑評測時螢幕不可鎖定、不可闔蓋（D9 第 3 條修好前的教訓；修好後仍建議如此）。
+
+### 發布與收尾（2026-10-18）
+
+- 發布：`v0.1.0`（GoReleaser，六個平台；`jevcc version`）。評測原始資料：release `eval-2026-10`（約 395 MB，含 `results/README.md`）。
+  repo 目前是 private，所以 README 的安裝方式以 `gh release download` 為主；要公開由使用者決定。
+- 收尾已做：環境快照比對（評測沒有改到使用者設定；`~/.claude-2` 的變化來自 cswitch 在 10/18 06:47 把 `~/.claude/projects`
+  複製過去、agents 改成連結）、刪除 `~/.jevcc-bench`、移除 eval worktree、`brew uninstall --cask blender`
+  （Homebrew 順帶自動移除了沒人用的 `cabal-install`、`pycparser`）。
+- 待使用者做：到 claude.ai 帳號設定撤銷 claude-2 的 setup-token（評測用，檔案已隨 `~/.jevcc-bench` 刪除，但 token 本身仍有效）。
+- 本機的 `~/go/bin/jevcc` 仍是舊版：用 release 或 `go install ./cmd/jevcc` 更新。更新後 guard 變成預設關（`/jev guard on` 可開）、
+  往下委派變成預設開但只限程式工作（`"delegate": false` 可關）。

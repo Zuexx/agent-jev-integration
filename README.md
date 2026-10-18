@@ -100,13 +100,14 @@ skill 超過 255 個時會自動分批挑選。
 需要 Claude Code 與 TypeSafe API key（https://console.typesafe.ai/keys）。三種裝法任選：
 
 ```bash
-# 1. 下載編好的執行檔（macOS／Linux／Windows，amd64／arm64）：https://github.com/Zuexx/agent-jev-integration/releases/latest
-#    例：macOS Apple Silicon
-curl -fsSL https://github.com/Zuexx/agent-jev-integration/releases/latest/download/jevcc_$(curl -fsSL https://api.github.com/repos/Zuexx/agent-jev-integration/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')_darwin_arm64.tar.gz | tar -xz jevcc
+# 1. 下載編好的執行檔（macOS／Linux／Windows，amd64／arm64）。repo 目前是 private，用 gh（已登入、有權限）下載：
+gh release download -R Zuexx/agent-jev-integration -p '*darwin_arm64.tar.gz' -p checksums.txt   # Apple Silicon；Intel 用 darwin_amd64
+shasum -a 256 -c checksums.txt --ignore-missing && tar -xzf jevcc_*_darwin_arm64.tar.gz jevcc
 sudo mv jevcc /usr/local/bin/   # 或放在任何 PATH 上的目錄
-#    用瀏覽器下載的話，macOS 會擋未簽章的執行檔：xattr -d com.apple.quarantine jevcc
+#    repo 公開後也可直接下載：https://github.com/Zuexx/agent-jev-integration/releases/latest
+#    （用瀏覽器下載時 macOS 會擋未簽章的執行檔：xattr -d com.apple.quarantine jevcc）
 
-# 2. 有 Go 1.22+：
+# 2. 有 Go 1.22+（private repo 需先 export GOPRIVATE=github.com/zuexx/* 並設好 git 的 GitHub 認證）：
 go install github.com/zuexx/agent-jev-integration/cmd/jevcc@latest
 
 # 3. 從原始碼：
