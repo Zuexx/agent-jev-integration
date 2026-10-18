@@ -104,6 +104,13 @@ const help = `jevcc /jev commands (handled locally, no model call):
   /jev statusline full|compact|off   how much jevcc shows in the statusline
 Other commands: /jev-classify, /jev-lint, /jev-review, /jev-audit`
 
+func delegateNote(cfg *config.Config) string {
+	if cfg.DelegateAll() {
+		return "any work Jev rates cheaper (delegate_scope: all)"
+	}
+	return "coding work only (delegate_scope: code); on by default"
+}
+
 func onOff(b bool) string {
 	if b {
 		return "on"
@@ -336,7 +343,7 @@ func Features(cfg *config.Config, in Input) []Feature {
 	return []Feature{
 		{"routing (skill, files, bulk, memory hints)", "jev", routing, "/jev on|off"},
 		{"escalate to a stronger subagent", "↑", routing && cfg.EscalateOn() && cheap, fmt.Sprintf("needs a session cheaper than opus; confidence ≥ %.2f; at most %d per session", cfg.EscalateConfidence, cfg.EscalateMaxPerSession)},
-		{"delegate down to a cheaper subagent", "↓", routing && cfg.Delegate, "off by default (measured +14% cost)"},
+		{"delegate down to a cheaper subagent", "↓", routing && cfg.DelegateOn(), delegateNote(cfg)},
 		{"review finished coding turns (Stop)", "review", routing && cfg.VerifyOn() && cheap, fmt.Sprintf("to %s at risk ≥ %.2f; at most %d per session", cfg.VerifyAgent, cfg.VerifyThreshold, cfg.VerifyMaxPerSession)},
 		{"guard risky commands/writes (PreToolUse)", "🛡", cfg.GuardOn(), fmt.Sprintf("off by default (/jev guard on); asks you at risk ≥ %.2f; works even with routing off", cfg.GuardThreshold)},
 		{"subagents may use MCP servers and skills", "mcp", cfg.AgentMCP, "off by default (/jev mcp on); applies to new sessions"},

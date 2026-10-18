@@ -49,13 +49,13 @@ func TestEscalateEnvOverridesDelegate(t *testing.T) {
 	t.Setenv("JEVCC_DELEGATE", "agent")
 	t.Setenv("JEVCC_ESCALATE", "0")
 	c, err := Load()
-	if err != nil || !c.Delegate || c.EscalateOn() {
-		t.Fatal(c.Delegate, c.EscalateOn(), err)
+	if err != nil || !c.DelegateOn() || c.EscalateOn() {
+		t.Fatal(c.DelegateOn(), c.EscalateOn(), err)
 	}
 	t.Setenv("JEVCC_DELEGATE", "off")
 	t.Setenv("JEVCC_ESCALATE", "1")
-	if c, _ = Load(); c.Delegate || !c.EscalateOn() {
-		t.Fatal(c.Delegate, c.EscalateOn())
+	if c, _ = Load(); c.DelegateOn() || !c.EscalateOn() {
+		t.Fatal(c.DelegateOn(), c.EscalateOn())
 	}
 	t.Setenv("JEVCC_ESCALATE", "")
 	if c, _ = Load(); c.EscalateOn() {

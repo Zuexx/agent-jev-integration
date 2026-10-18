@@ -19,8 +19,10 @@
 官方文件明講 Jev **不能**當 Claude Code 的主模型，hook 也**無法**切換當前 session 的模型。所以：
 
 - **互動模式（`/jev on`）**：hook 把判斷結果以 `<jev_routing>` 區塊附加在 prompt 上：skill 建議、大量判斷時改用 `jevcc classify` 的提示。
-  「委派給便宜模型的 subagent」建議**預設關閉**（`"delegate": true` 才開）：A/B 實測 Claude 照做後，短任務成本反而 +12%、時間 2 倍，
-  因為主模型載入 Claude Code 系統提示的固定成本仍在。真正的換模型省錢走下一項。
+  「委派給便宜模型的 subagent」建議**預設開啟，只限程式工作**：Jev 同一次呼叫裡多問一題「這是不是寫／改／修／測／審程式碼」，
+  p ≥ 0.8 且 Jev 判定的等級比主對話便宜才建議委派（`"delegate_scope": "all"` 取消程式限制、`"delegate": false` 關閉）。
+  依據是 2026-10 的隔離評測（`docs/eval-report.md`）：opus 主導開委派品質不變，只有程式類明確省錢（約 −16%）。
+  這個「程式工作」判斷在 30 句沒看過的 `bench/router_holdout.jsonl` 上 29/30 正確（誤判 1 句：要求挑戰改寫計畫）。
 - **Headless（`jevcc ask "<prompt>"`）**：先由 Jev 決定，再以 `claude --model <tier>` 啟動，這才是真正的逐句切換模型。
 - **挑 skill**：照官方 Skill suggestion cookbook 的兩段式（第一次排名全部 skill + 「需不需要 skill」閘門，第二次精讀前三名可全部否決）。
   它降低「載錯 skill」，**不會**減少 Claude Code 本身送出的 skill 清單 token。
@@ -34,7 +36,7 @@
 > （程式難題 haiku 主導 14/15 通過，花費約 opus 的 4%）。研究、規劃、設計、影片、Blender 這類開放式與視覺類工作，
 > **一開始就用 opus（或 sonnet）主導**：haiku 主導明顯較差（opus 評審與兩位人工評分者一致），而「haiku＋往上升級」
 > 花費約 haiku 的 11 倍、opus 的一半，品質大多仍輸 opus 主導，不能拿來替代。
-> opus 主導開往下委派（`"delegate": true`）：品質不變；只有程式類明確省錢（約 −16%），其他類別 Jev 通常不委派，整體 −6%、無明確差異。
+> opus 主導開往下委派：品質不變；只有程式類明確省錢（約 −16%），整體 −6%、無明確差異。所以委派預設開、只限程式工作（D11）。
 > 下表「實測」欄是舊的 bench 數字，依 D6 不當公開依據，保留作為參考。
 
 預設值就是實測後的建議值，不用編輯 config。一行安裝：
@@ -47,7 +49,7 @@ jevcc install --default-model haiku --on-by-default
 - `--on-by-default`：每個新對話自動開啟 Jev（單一對話可用 `/jev off` 關掉）
 - 主對話用什麼模型由 hook 自動偵測（對話紀錄裡最近一次回覆的模型 → Claude Code 設定），用 `/model` 中途切換也會跟著變
 
-預設行為：往上升級開、往下委派關（實測反而貴）、事後驗收只在主對話比 opus 便宜時作用、危險動作檢查**關**（`/jev guard on` 或 `jevcc install --guard` 開啟，只會要求確認）、subagent 用 MCP／skill **關**（`/jev mcp on` 或 `jevcc install --agent-mcp` 開啟，新對話生效）。要改才需要 `~/.jevcc/config.json`，欄位見上方設定說明。
+預設行為：往上升級開、往下委派開但只限程式工作、事後驗收只在主對話比 opus 便宜時作用、危險動作檢查**關**（`/jev guard on` 或 `jevcc install --guard` 開啟，只會要求確認）、subagent 用 MCP／skill **關**（`/jev mcp on` 或 `jevcc install --agent-mcp` 開啟，新對話生效）。要改才需要 `~/.jevcc/config.json`，欄位見上方設定說明。
 
 每句話的處理方式：
 
@@ -95,13 +97,26 @@ skill 超過 255 個時會自動分批挑選。
 
 ## 安裝
 
-需要 Go 1.22+、Claude Code、TypeSafe API key（https://console.typesafe.ai/keys）。
+需要 Claude Code 與 TypeSafe API key（https://console.typesafe.ai/keys）。三種裝法任選：
 
 ```bash
-cd agent-jev-integration
-go install ./cmd/jevcc          # 安裝到 $(go env GOPATH)/bin，需在 PATH 上
+# 1. 下載編好的執行檔（macOS／Linux／Windows，amd64／arm64）：https://github.com/Zuexx/agent-jev-integration/releases/latest
+#    例：macOS Apple Silicon
+curl -fsSL https://github.com/Zuexx/agent-jev-integration/releases/latest/download/jevcc_$(curl -fsSL https://api.github.com/repos/Zuexx/agent-jev-integration/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')_darwin_arm64.tar.gz | tar -xz jevcc
+sudo mv jevcc /usr/local/bin/   # 或放在任何 PATH 上的目錄
+#    用瀏覽器下載的話，macOS 會擋未簽章的執行檔：xattr -d com.apple.quarantine jevcc
+
+# 2. 有 Go 1.22+：
+go install github.com/zuexx/agent-jev-integration/cmd/jevcc@latest
+
+# 3. 從原始碼：
+cd agent-jev-integration && go install ./cmd/jevcc
+
+jevcc version
 jevcc key                       # 貼上 key（不回顯），存於 ~/.jevcc/config.json (600)；或 export TYPESAFE_API_KEY
 ```
+
+發新版：在 main 上打 `vX.Y.Z` tag 並推上去，`.github/workflows/release.yml` 會用 GoReleaser 編好六個平台並附到 GitHub Release。
 
 安裝位置任選（可同時裝多處，同一句 prompt 只會路由一次）：
 
@@ -129,7 +144,7 @@ jevcc key                       # 貼上 key（不回顯），存於 ~/.jevcc/co
 CLI 也可直接用：`jevcc route "幫我找 hook.go"` 看單句判斷細節；`jevcc classify --in x.csv --questions q.json --rank urgency --top 20`。
 
 設定檔 `~/.jevcc/config.json`（皆可省略）：`tiers`（預設 haiku < sonnet < opus，可改成加入 fable）、
-`delegate`（false）、`min_confidence`（0.75）、`skill_gate`（0.3）／`skill_fit`（0.7）——後兩個門檻由 `jevcc eval` 的門檻掃描選定、再用獨立的 30 句 `bench/router_holdout.jsonl` 驗證、`hook_timeout_ms`（4000）、`default_on`。
+`delegate`（true）、`delegate_scope`（`code`：只委派程式工作；`all`）、`min_confidence`（0.75）、`skill_gate`（0.3）／`skill_fit`（0.7）——後兩個門檻由 `jevcc eval` 的門檻掃描選定、再用獨立的 30 句 `bench/router_holdout.jsonl` 驗證、`hook_timeout_ms`（4000）、`default_on`。
 
 ## 量化證據：怎麼證明加了 Jev 有沒有用
 

@@ -25,10 +25,13 @@ type Config struct {
 	// Tiers are ordered cheapest first; the last one is "handle it yourself".
 	Tiers []Tier `json:"tiers,omitempty"`
 	// Delegate makes the hook tell Claude to hand cheaper-tier prompts to a
-	// subagent on that model. Off by default: in the A/B bench, delegation
-	// raised cost and time on short tasks (the main model's fixed context
-	// cost remains). Model savings come from `jevcc ask` instead.
-	Delegate bool `json:"delegate,omitempty"`
+	// subagent on that model. On by default since the 2026-10 evaluation
+	// (docs/eval-report.md, D11): with opus leading, quality held and only
+	// coding work saved clearly, so DelegateScope limits it to that.
+	Delegate *bool `json:"delegate,omitempty"`
+	// DelegateScope is "code" (default: delegate only prompts Jev rates as
+	// software work) or "all".
+	DelegateScope string `json:"delegate_scope,omitempty"`
 	// AgentMCP gives jev-haiku, jev-sonnet and jev-opus every tool of the
 	// session, MCP servers and Skill included, instead of the fixed list
 	// (Read, Grep, Glob, Bash, Edit, Write). Off by default; written into the
@@ -148,10 +151,13 @@ func Load() (*Config, error) {
 	switch v := os.Getenv("JEVCC_DELEGATE"); v {
 	case "agent", "model":
 		t := true
-		c.Delegate, c.DelegateVia, c.Escalate = true, v, &t
+		c.Delegate, c.DelegateVia, c.Escalate = &t, v, &t
 	case "off":
 		f := false
-		c.Delegate, c.Escalate = false, &f
+		c.Delegate, c.Escalate = &f, &f
+	}
+	if v := os.Getenv("JEVCC_DELEGATE_SCOPE"); v != "" {
+		c.DelegateScope = v
 	}
 	// Last, so it can override what JEVCC_DELEGATE implies (the bench's
 	// down-only and up-only arms).
@@ -243,8 +249,12 @@ func (c *Config) FindFilesOn() bool   { return on(c.FindFiles) }
 func (c *Config) SkillAdviceOn() bool { return on(c.SkillAdvice) }
 func (c *Config) EscalateOn() bool    { return on(c.Escalate) }
 func (c *Config) VerifyOn() bool      { return on(c.Verify) }
-func (c *Config) GuardOn() bool       { return c.Guard != nil && *c.Guard } // off unless set (D9)
-func (c *Config) InjectionOn() bool   { return on(c.Injection) }
+func (c *Config) DelegateOn() bool    { return on(c.Delegate) }
+
+// DelegateAll reports whether delegation applies beyond coding work.
+func (c *Config) DelegateAll() bool { return c.DelegateScope == "all" }
+func (c *Config) GuardOn() bool     { return c.Guard != nil && *c.Guard } // off unless set (D9)
+func (c *Config) InjectionOn() bool { return on(c.Injection) }
 
 // TraceOn is off unless set: trace records hold prompt text.
 func (c *Config) TraceOn() bool { return c.Trace != nil && *c.Trace }

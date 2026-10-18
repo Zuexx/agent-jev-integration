@@ -27,7 +27,9 @@ A hook cannot change the session's model. Two honest mechanisms:
 - **Interactive (hook arm):** the hook classifies the prompt into a tier (`haiku`/`sonnet`/`opus`, configurable) and,
   for a cheaper tier, tells Claude to delegate execution to a subagent with that `model`. The main model still reads the
   prompt and the subagent's result, so savings exist only when the delegated work is larger than the delegation
-  overhead. Whether Claude follows the advice is measured (`/jev stats` → follow rate).
+  overhead. Whether Claude follows the advice is measured (`/jev stats` → follow rate). Since D11 (2026-10) delegation
+  is on by default but limited to software work: the same Jev call asks `CodeQuestion` (p ≥ 0.8), because the
+  isolated evaluation found clear savings only on coding tasks (`docs/eval-report.md`); `delegate_scope: all` lifts it.
 - **Head-less (route arm):** `jevcc ask -- <prompt>` classifies first, then runs `claude -p --model <tier>`. This is a
   true per-prompt model switch.
 

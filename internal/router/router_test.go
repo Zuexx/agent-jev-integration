@@ -28,7 +28,8 @@ func (f *fake) Ask(_ context.Context, _ any, qs map[string]jev.Question) (*jev.R
 
 func cfg() *config.Config {
 	c, _ := config.Load()
-	c.Delegate = true
+	t := true
+	c.Delegate = &t
 	return c
 }
 
@@ -41,7 +42,7 @@ func TestRoutesTierAndVerifiesSkill(t *testing.T) {
 			return map[string]jev.Answer{
 				"tier":  {Choice: "haiku", Confidence: 0.8, Probabilities: map[string]float64{"haiku": 0.9, "sonnet": 0.1}},
 				"skill": {Probabilities: map[string]float64{"tdd": 0.5, "none": 0.3, "pdf": 0.1, "xlsx": 0.05, "docx": 0.05}},
-				"act":   {Noul: 0.9}, "steps": {Noul: 0.8}, "talk": {Noul: 0.1}, "bulk": {Noul: 0.1},
+				"act":   {Noul: 0.9}, "steps": {Noul: 0.8}, "talk": {Noul: 0.1}, "bulk": {Noul: 0.1}, "code": {Noul: 0.9},
 			}
 		}
 		if len(qs) != 4 { // pick + 3 fits
@@ -53,7 +54,7 @@ func TestRoutesTierAndVerifiesSkill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.Tier != "haiku" || d.Skill != "tdd" || d.Calls != 2 || d.Tokens != 2000 || d.LatencyMS != 400 {
+	if d.Tier != "haiku" || d.Skill != "tdd" || d.Code != 0.9 || d.Calls != 2 || d.Tokens != 2000 || d.LatencyMS != 400 {
 		t.Fatalf("%+v", d)
 	}
 	if strings.Join(d.Candidates, ",") != "tdd,pdf,docx" && strings.Join(d.Candidates, ",") != "tdd,pdf,xlsx" {
@@ -97,12 +98,28 @@ func TestLowConfidenceGivesNoTierAdvice(t *testing.T) {
 	}
 }
 
-func TestNoDelegationAdviceByDefault(t *testing.T) {
+func TestDelegatesOnlyCodingWorkByDefault(t *testing.T) {
 	t.Setenv("JEVCC_HOME", t.TempDir())
 	c, _ := config.Load()
-	d := &Decision{Tier: "haiku", TierConf: 0.99, TierProbs: map[string]float64{"haiku": 0.99}}
-	if got := Context(d, c); got != "" {
-		t.Fatal(got)
+	if !c.DelegateOn() || c.DelegateAll() {
+		t.Fatal("delegation must default to on, coding work only")
+	}
+	prose := &Decision{Tier: "haiku", TierConf: 0.99, TierProbs: map[string]float64{"haiku": 0.99}, Code: 0.1}
+	if got := Context(prose, c); got != "" {
+		t.Fatal("non-coding work delegated:", got)
+	}
+	code := &Decision{Tier: "haiku", TierConf: 0.99, TierProbs: map[string]float64{"haiku": 0.99}, Code: 0.9}
+	if got := Context(code, c); !strings.Contains(got, `"jev-haiku"`) {
+		t.Fatal("coding work not delegated:", got)
+	}
+	c.DelegateScope = "all"
+	if got := Context(prose, c); !strings.Contains(got, `"jev-haiku"`) {
+		t.Fatal("delegate_scope all ignored:", got)
+	}
+	f := false
+	c.Delegate = &f
+	if got := Context(code, c); got != "" {
+		t.Fatal("delegate false ignored:", got)
 	}
 }
 
@@ -110,7 +127,7 @@ func TestDelegateViaModel(t *testing.T) {
 	t.Setenv("JEVCC_HOME", t.TempDir())
 	t.Setenv("JEVCC_DELEGATE", "model")
 	c, _ := config.Load()
-	d := &Decision{Tier: "haiku", TierConf: 0.99, TierProbs: map[string]float64{"haiku": 0.99}}
+	d := &Decision{Tier: "haiku", TierConf: 0.99, TierProbs: map[string]float64{"haiku": 0.99}, Code: 0.9}
 	if got := Context(d, c); !strings.Contains(got, `model: "haiku"`) {
 		t.Fatal(got)
 	}

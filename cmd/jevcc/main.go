@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -44,9 +45,10 @@ import (
 
 const usage = `usage: jevcc <command>
 
-  install [--scope user|project|local] [--dir D] [--default-model haiku] [--on-by-default]
+  install [--scope user|project|local] [--dir D] [--default-model haiku] [--on-by-default] [--guard] [--agent-mcp]
                                                    add the hooks, slash commands and subagents
   uninstall [--scope ...] [--dir D]                undo install for that scope
+  version                                          print the jevcc version
   doctor [--dir D]                                 check key, claude and every install scope
   key                                              store your TypeSafe API key (read from stdin)
 
@@ -109,6 +111,7 @@ func realMain(args []string) int {
 		"judge":        cmdJudge,
 		"rate":         cmdRate,
 		"report":       cmdReport,
+		"version":      cmdVersion,
 	}
 	f, ok := cmds[args[0]]
 	if !ok {
@@ -116,6 +119,47 @@ func realMain(args []string) int {
 		return 2
 	}
 	return f(args[1:])
+}
+
+// version is set by the release build (-ldflags "-X main.version=v1.2.3");
+// a `go install` build reports its module version or commit instead.
+var version = ""
+
+func cmdVersion([]string) int {
+	fmt.Println("jevcc", buildVersion())
+	return 0
+}
+
+func buildVersion() string {
+	if version != "" {
+		return version
+	}
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "unknown"
+	}
+	if v := bi.Main.Version; v != "" && v != "(devel)" {
+		return v
+	}
+	rev, dirty := "", false
+	for _, s := range bi.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			rev = s.Value
+		case "vcs.modified":
+			dirty = s.Value == "true"
+		}
+	}
+	if rev == "" {
+		return "devel"
+	}
+	if len(rev) > 7 {
+		rev = rev[:7]
+	}
+	if dirty {
+		rev += "-dirty"
+	}
+	return "devel " + rev
 }
 
 func fail(err error) int {
