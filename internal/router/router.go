@@ -29,7 +29,14 @@ const (
 	// BulkThreshold is the "many items, same question" noul above which the
 	// hook points Claude at jevcc classify.
 	BulkThreshold = 0.6
+	// CodeThreshold is the p above which a request counts as software work
+	// for delegation (delegate_scope "code").
+	CodeThreshold = 0.8
 )
+
+// CodeQuestion asks whether a request is software work. In the evaluation,
+// delegating down saved money only on coding tasks (docs/eval-report.md).
+const CodeQuestion = "`request` is software work: writing, changing, fixing, testing, debugging or reviewing program code, scripts or tests."
 
 type Asker interface {
 	Ask(ctx context.Context, state any, qs map[string]jev.Question) (*jev.Response, error)
@@ -46,10 +53,13 @@ type Decision struct {
 	// because a skill hidden to "name-only" shows Claude no description.
 	SkillDesc string `json:"-"`
 	// Picked is the verification winner before the SkillFit threshold.
-	Picked    string  `json:"skill_picked,omitempty"`
-	SkillFit  float64 `json:"skill_fit,omitempty"`
-	Bulk      float64 `json:"bulk"`
-	Remember  float64 `json:"remember"`
+	Picked   string  `json:"skill_picked,omitempty"`
+	SkillFit float64 `json:"skill_fit,omitempty"`
+	Bulk     float64 `json:"bulk"`
+	Remember float64 `json:"remember"`
+	// Code is Jev's p that the request is software work; delegation down is
+	// limited to it unless delegate_scope is "all".
+	Code      float64 `json:"code"`
 	Calls     int     `json:"jev_calls"`
 	Tokens    int     `json:"jev_input_tokens"`
 	CostUSD   float64 `json:"jev_cost_usd"`
@@ -85,6 +95,7 @@ func Route(ctx context.Context, c Asker, cfg *config.Config, prompt string, skil
 		"tier":     jev.Choice("A coding agent must complete `request`. Which model tier is the cheapest one that can complete it fully and at good quality?", tiers),
 		"bulk":     jev.Noul("`request` asks to classify, filter, label, score or triage many items (dozens or more), asking the same question about each item."),
 		"remember": jev.Noul(MemoryQuestion),
+		"code":     jev.Noul(CodeQuestion),
 	}
 	if len(skills) > 0 {
 		pool := skills
@@ -118,6 +129,7 @@ func Route(ctx context.Context, c Asker, cfg *config.Config, prompt string, skil
 	d.Tier, d.TierConf, d.TierProbs = t.Choice, t.Confidence, t.Probabilities
 	d.Bulk = r1.Answers["bulk"].Noul
 	d.Remember = r1.Answers["remember"].Noul
+	d.Code = r1.Answers["code"].Noul
 	if len(skills) == 0 {
 		return d, nil
 	}
@@ -251,7 +263,8 @@ func Build(d *Decision, cfg *config.Config) (string, []string) {
 	names := cfg.TierNames()
 	top := names[len(names)-1]
 	escalated := false
-	if (cfg.Delegate || cfg.EscalateOn()) && d.Tier != "" && d.TierConf >= min(cfg.MinConfidence, cfg.EscalateConfidence) {
+	delegate := cfg.DelegateOn() && (cfg.DelegateAll() || d.Code >= CodeThreshold)
+	if (delegate || cfg.EscalateOn()) && d.Tier != "" && d.TierConf >= min(cfg.MinConfidence, cfg.EscalateConfidence) {
 		rank := map[string]int{}
 		for i, n := range names {
 			rank[n] = i
@@ -265,7 +278,7 @@ func Build(d *Decision, cfg *config.Config) (string, []string) {
 			how = fmt.Sprintf("spawn a subagent with the Agent tool, model: %q", d.Tier)
 		}
 		switch {
-		case cfg.Delegate && rank[d.Tier] < rank[main] && d.TierConf >= cfg.MinConfidence:
+		case delegate && rank[d.Tier] < rank[main] && d.TierConf >= cfg.MinConfidence:
 			add("tier", fmt.Sprintf("- Model: this is %s-level work (Jev p=%.2f). The user asks you to delegate it: unless you already run on %s or cheaper, %s, give it a self-contained brief, and relay its result. This standing request counts as the user asking for a subagent. Do it yourself only if it needs conversation context that would be costly to hand over.", d.Tier, d.TierProbs[d.Tier], d.Tier, how))
 		case cfg.EscalateOn() && rank[d.Tier] > rank[main] && d.TierConf >= cfg.EscalateConfidence && cfg.EscalationsUsed >= cfg.EscalateMaxPerSession:
 			add("escalate_capped", fmt.Sprintf("- Model: Jev rates this %s-level (p=%.2f), but this session already escalated %d times, the limit the user set. Do not spawn a subagent for it; tell the user in one line that it looks like %s-level work so they can switch with /model %s if they want, then do your best.", d.Tier, d.TierProbs[d.Tier], cfg.EscalationsUsed, d.Tier, d.Tier))

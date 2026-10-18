@@ -62,7 +62,7 @@ func TestRenderModes(t *testing.T) {
 	cfg.MainModel = "haiku"
 	s := Session{Prompts: 3, Escalated: 1, EscalatedTo: map[string]int{"opus": 1}, GuardChecked: 4, GuardAsked: 1, Screened: 2, CostUSD: 0.0004}
 	full := Render(cfg, Input{SessionID: "S"}, s)
-	if len(full) != 2 || !strings.Contains(full[0], "⚙ jev on · haiku (config) · ↑✓ ↓✗ review✓ 🛡✗ mcp✗ inject✓") || !strings.Contains(full[1], "inject 0/2 warned") {
+	if len(full) != 2 || !strings.Contains(full[0], "⚙ jev on · haiku (config) · ↑✓ ↓✓ review✓ 🛡✗ mcp✗ inject✓") || !strings.Contains(full[1], "inject 0/2 warned") {
 		t.Fatalf("%q", full)
 	}
 	cfg.Statusline = "compact"

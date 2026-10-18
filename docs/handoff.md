@@ -83,5 +83,6 @@
 
 - 報告：`docs/eval-report.md`。P2 第一次作廢（螢幕鎖定後 Jev 呼叫全失敗），已重跑。人工評分只評視覺類，兩輪（使用者、第三方）。
 - 採用 D9（1、2、3）。D10：P3、P4 不跑；subagent 用 MCP（`/jev mcp`）與 guard（`/jev guard`）改成自選、預設關。
+- D11：往下委派預設開，只限程式工作（Jev 多答 `CodeQuestion`，p ≥ 0.8）。
 - 評測資料在 `~/.jevcc-bench/results/`（p1、p2b、p12b＝合併檔與評審、p12/rate-round1＝第 1 輪人工、p12/rate.html＝第 2 輪）。
 - 背景跑評測時螢幕不可鎖定、不可闔蓋（D9 第 3 條修好前的教訓；修好後仍建議如此）。

@@ -111,3 +111,18 @@
   - agent_mcp 開啟後 subagent 能用 MCP 與 skill（冒煙測試中受限的 subagent 改用命令列 Blender 或 Bash 讀 skill 繞過），
     但也能用主對話所有 MCP 的寫入類工具；`AskUserQuestion` 等仍會被 Claude Code 從 subagent 移除。
 - D3 狀態：由這條取代（不再待評測）。
+
+## D11 — 往下委派預設開，只限程式工作（2026-10-18）
+
+- 使用者決定：往下委派改為預設開，但只有程式工作才委派。原本只看 Jev 判的等級（tier），哪類工作都可能被委派；
+  現在 Jev 同一次呼叫多答一題 `CodeQuestion`（「是不是寫／改／修／測／審程式碼」），p ≥ 0.8 且等級比主對話便宜才建議委派。
+  不多一次呼叫，只多幾十個輸入 token。
+- 設定：`delegate`（預設 true，`false` 關閉）、`delegate_scope`（預設 `code`，`all` 回到不限類別）；環境變數 `JEVCC_DELEGATE_SCOPE`。
+- 依據：評測中 opus＋往下品質不變，只有程式類明確省錢（約 −16%，`docs/eval-report.md`）。
+- 驗證（計畫第 12 節）：
+  - 門檻在評測的 32 個題目 prompt 上選定：明確的程式題全部 ≥ 0.97；非程式題中 bulk-classify 0.72、json-to-csv 0.71、
+    design-adr 0.58 高於 0.5，所以門檻定 0.8（video-intro 0.95：Remotion 專案要寫 React 程式，算程式工作）。
+  - 用沒看過的 30 句 `bench/router_holdout.jsonl` 驗證：29/30 正確。程式類 14 句都 ≥ 0.82；誤判 1 句：
+    「Challenge my plan to rewrite the billing service in Rust」0.82（是審計畫，不是程式）。
+  - 委派後的省錢幅度沒有在新題目上重跑評測驗證（使用者決定不再跑評測），報告中的 −16% 只適用評測的程式難題。
+- 已知取捨：既有使用者更新後，原本沒開委派的人會開始收到程式工作的委派建議（Claude 可能多開 subagent）；不想要就設 `"delegate": false`。

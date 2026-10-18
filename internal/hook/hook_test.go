@@ -82,7 +82,7 @@ func TestMainEndToEnd(t *testing.T) {
 	cfg := setup(t)
 	_ = cfg
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"model":"jev-1.13.0","answers":{"tier":{"type":"choice","choice":"haiku","confidence":0.9,"probabilities":{"haiku":0.95,"sonnet":0.05}},"bulk":{"type":"noul","noul":0.02}},"usage":{"input_tokens":500}}`))
+		w.Write([]byte(`{"model":"jev-1.13.0","answers":{"tier":{"type":"choice","choice":"haiku","confidence":0.9,"probabilities":{"haiku":0.95,"sonnet":0.05}},"bulk":{"type":"noul","noul":0.02},"code":{"type":"noul","noul":0.9}},"usage":{"input_tokens":500}}`))
 	}))
 	defer srv.Close()
 	t.Setenv("TYPESAFE_ENDPOINT", srv.URL)
