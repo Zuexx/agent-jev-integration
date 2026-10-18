@@ -97,13 +97,26 @@ skill 超過 255 個時會自動分批挑選。
 
 ## 安裝
 
-需要 Go 1.22+、Claude Code、TypeSafe API key（https://console.typesafe.ai/keys）。
+需要 Claude Code 與 TypeSafe API key（https://console.typesafe.ai/keys）。三種裝法任選：
 
 ```bash
-cd agent-jev-integration
-go install ./cmd/jevcc          # 安裝到 $(go env GOPATH)/bin，需在 PATH 上
+# 1. 下載編好的執行檔（macOS／Linux／Windows，amd64／arm64）：https://github.com/Zuexx/agent-jev-integration/releases/latest
+#    例：macOS Apple Silicon
+curl -fsSL https://github.com/Zuexx/agent-jev-integration/releases/latest/download/jevcc_$(curl -fsSL https://api.github.com/repos/Zuexx/agent-jev-integration/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')_darwin_arm64.tar.gz | tar -xz jevcc
+sudo mv jevcc /usr/local/bin/   # 或放在任何 PATH 上的目錄
+#    用瀏覽器下載的話，macOS 會擋未簽章的執行檔：xattr -d com.apple.quarantine jevcc
+
+# 2. 有 Go 1.22+：
+go install github.com/zuexx/agent-jev-integration/cmd/jevcc@latest
+
+# 3. 從原始碼：
+cd agent-jev-integration && go install ./cmd/jevcc
+
+jevcc version
 jevcc key                       # 貼上 key（不回顯），存於 ~/.jevcc/config.json (600)；或 export TYPESAFE_API_KEY
 ```
+
+發新版：在 main 上打 `vX.Y.Z` tag 並推上去，`.github/workflows/release.yml` 會用 GoReleaser 編好六個平台並附到 GitHub Release。
 
 安裝位置任選（可同時裝多處，同一句 prompt 只會路由一次）：
 
