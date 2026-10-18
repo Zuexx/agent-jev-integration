@@ -30,33 +30,34 @@
   呼叫失敗會記下來，狀態列顯示「⚠ N Jev errors」。macOS 螢幕鎖定時系統的憑證驗證會失敗（`x509: OSStatus -26276`），
   這種情況會自動改用系統內建的 `/etc/ssl/cert.pem` 再試一次。
 
-## 建議設定：從 claude 進、預設 haiku、讓 Jev 決定何時升級
+## 建議設定：從 claude 進、主導模型照舊、讓 Jev 負責分類與程式委派
 
-> **2026-10 隔離評測後的修正（`docs/eval-report.md`，決定 D9）**：預設 haiku 只適合規格清楚、能用測試驗收的程式工作
-> （程式難題 haiku 主導 14/15 通過，花費約 opus 的 4%）。研究、規劃、設計、影片、Blender 這類開放式與視覺類工作，
-> **一開始就用 opus（或 sonnet）主導**：haiku 主導明顯較差（opus 評審與兩位人工評分者一致），而「haiku＋往上升級」
-> 花費約 haiku 的 11 倍、opus 的一半，品質大多仍輸 opus 主導，不能拿來替代。
-> opus 主導開往下委派：品質不變；只有程式類明確省錢（約 −16%），整體 −6%、無明確差異。所以委派預設開、只限程式工作（D11）。
-> 下表「實測」欄是舊的 bench 數字，依 D6 不當公開依據，保留作為參考。
+依 2026-10 的隔離評測（`docs/eval-report.md`，D9、D11）：**不要把 Claude Code 的預設模型改成 haiku**。
 
-預設值就是實測後的建議值，不用編輯 config。一行安裝：
+- 主導模型維持 opus（或你習慣的 sonnet）。研究、規劃、設計、影片、Blender 這類開放式與視覺類工作，haiku 主導明顯較差
+  （opus 評審與兩位人工評分者一致）；「haiku＋往上升級」花費約 haiku 的 11 倍、opus 的一半，品質大多仍輸 opus 主導。
+- 省錢靠兩件事：程式工作由 Jev 判斷後委派給便宜的 subagent（預設開，評測中程式類約 −16%、品質不變），
+  以及你自己依工作挑主導模型（sonnet 主導比 opus 便宜約 65%；品質差距評測中不確定）。
+- 只有規格清楚、能用測試驗收的程式工作，才考慮自己 `/model haiku`（程式難題 haiku 主導 14/15 通過，花費約 opus 的 4%）。
+
+一行安裝（不改你的預設模型）：
 
 ```bash
-jevcc install --default-model haiku --on-by-default
+jevcc install --on-by-default
 ```
 
-- `--default-model haiku`：Claude Code 預設開 haiku（原本的值會記下，`jevcc uninstall` 時還原）
 - `--on-by-default`：每個新對話自動開啟 Jev（單一對話可用 `/jev off` 關掉）
 - 主對話用什麼模型由 hook 自動偵測（對話紀錄裡最近一次回覆的模型 → Claude Code 設定），用 `/model` 中途切換也會跟著變
+- `--default-model <model>` 仍可用（會改 Claude Code 的預設模型，原本的值會記下，`jevcc uninstall` 時還原），但不建議設成 haiku。
 
-預設行為：往上升級開、往下委派開但只限程式工作、事後驗收只在主對話比 opus 便宜時作用、危險動作檢查**關**（`/jev guard on` 或 `jevcc install --guard` 開啟，只會要求確認）、subagent 用 MCP／skill **關**（`/jev mcp on` 或 `jevcc install --agent-mcp` 開啟，新對話生效）。要改才需要 `~/.jevcc/config.json`，欄位見上方設定說明。
+預設行為：往下委派開但只限程式工作、往上升級與事後驗收只在主對話比 opus 便宜時作用（例如你切到 haiku／sonnet）、危險動作檢查**關**（`/jev guard on` 或 `jevcc install --guard` 開啟，只會要求確認）、subagent 用 MCP／skill **關**（`/jev mcp on` 或 `jevcc install --agent-mcp` 開啟，新對話生效）。要改才需要 `~/.jevcc/config.json`，欄位見下方設定說明。
 
-每句話的處理方式：
+每句話的處理方式（「實測」欄是舊的 bench 數字，依 D6 不當公開依據，保留作為參考；升級與驗收兩列只在主對話比 opus 便宜時發生）：
 
 | 情況 | 會發生什麼 | 實測 |
 |---|---|---|
-| Jev 判定需要 opus（規劃、架構、不明原因的 bug、安全審查） | haiku 先把工作交給 `jev-opus` subagent | 17/17 照做；opus 題中 Jev 判對 17/21 |
-| 一般工作 | haiku 自己做 | 10 個任務成本中位數 −96%，全數通過；5 道規格陷阱題 haiku 也全過 |
+| 程式工作，Jev 判定比主對話便宜的等級就夠 | 主對話把工作交給 `jev-haiku`／`jev-sonnet` subagent（`"delegate": false` 關閉） | 隔離評測：opus 主導程式難題約 −16%、品質不變 |
+| Jev 判定需要 opus（規劃、架構、不明原因的 bug、安全審查） | 便宜的主對話先把工作交給 `jev-opus` subagent | 17/17 照做；opus 題中 Jev 判對 17/21 |
 | haiku 說做完了 | Jev 驗收，有改程式卻沒跑過測試、有沒解決的錯誤等狀況就交給 opus 複查（`"verify": true`） | 簡單任務誤升級 0/2 |
 | 要執行指令或寫檔（開啟 guard 時） | 危險動作改成請你確認（`"guard": true`，預設關） | 危險抓到 21/22，安全誤擋 0/23（字串規則：12/22、2/23） |
 | 問題跟專案程式碼有關 | 附上最可能相關的 3 個檔案 | 前三名挑對 19/20；haiku 讀的 token −20% |
@@ -71,8 +72,8 @@ Jev 比較會判錯的題型：「找資料寫研究」和「整理領域用語�
 安裝時會把現有的 statusline 包一層（`jevcc → cswitch → claude-dashboard`），在下面多加 Jev 的狀態：
 
 ```
-⚙ jev on · haiku (this session) · ↑✓ ↓✗ review✓ 🛡✓ inject✓ files✓ skill✓ remember✓
-📊 5 prompts · ↑opus 1 · skill 2 · files 3 · 🛡 0/12 asked · inject 0/2 warned · jev $0.0008
+⚙ jev on · opus (this session) · ↑✗ ↓✓ review✗ 🛡✗ mcp✗ inject✓ files✓ skill✓ remember✓
+📊 5 prompts · ↓cheaper 1 · skill 2 · files 3 · inject 0/2 warned · jev $0.0008
 ```
 
 `/jev statusline full|compact|off` 切換顯示；`/jev status` 列出全部設定、門檻與模型偵測來源。`jevcc uninstall` 會還原原本的 statusline。
