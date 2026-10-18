@@ -97,3 +97,4 @@
 - 待使用者做：到 claude.ai 帳號設定撤銷 claude-2 的 setup-token（評測用，檔案已隨 `~/.jevcc-bench` 刪除，但 token 本身仍有效）。
 - 本機的 `~/go/bin/jevcc` 仍是舊版：用 release 或 `go install ./cmd/jevcc` 更新。更新後 guard 變成預設關（`/jev guard on` 可開）、
   往下委派變成預設開但只限程式工作（`"delegate": false` 可關）。
+- README 建議設定改為不設預設模型（不再建議 `--default-model haiku`），依 D9／D11：主導維持 opus／sonnet，程式工作靠委派省錢。
