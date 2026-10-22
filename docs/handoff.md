@@ -98,3 +98,18 @@
 - 本機的 `~/go/bin/jevcc` 仍是舊版：用 release 或 `go install ./cmd/jevcc` 更新。更新後 guard 變成預設關（`/jev guard on` 可開）、
   往下委派變成預設開但只限程式工作（`"delegate": false` 可關）。
 - README 建議設定改為不設預設模型（不再建議 `--default-model haiku`），依 D9／D11：主導維持 opus／sonnet，程式工作靠委派省錢。
+
+## 2026-10-19
+
+### 結論：逐句路由省不到錢（D12）
+
+- 依據是使用者實際工作中的使用紀錄。那是公司專案：內容不得進 repo、不得當驗證資料。
+- 專案重心改為「Jev 粗篩、Claude 只看標出來的」工具；路由不再當賣點。是否繼續，看下一步的驗證。
+
+### 2026-10-22：jevcc 已從使用者機器完整移除，專案暫停（D13）
+
+- 已做：兩個帳號（`~/.claude`、`~/.claude-2`）跑過 `jevcc uninstall`（hook、`/jev*` 指令、`jev-*` agent 移除，狀態列還原為 cswitch，
+  預設模型維持 `opus`），刪除 `~/.jevcc`（含 API key、決策紀錄、設定備份）與 `~/go/bin/jevcc`。
+- repo 保留，之後再決定要不要用。重啟前先讀 D12、D13 與 `docs/research-jev.md`（mods 的 `turn.step` 每回合調 effort 是最有希望的方向，未實作、未驗證）。
+- 待使用者做：到 console.typesafe.ai 撤銷 Jev API key；claude-2 的 setup-token 撤銷方式官方文件沒寫（token 檔已刪，一年後失效）。
+- 小問題（未修）：`/jev status` 的 Stop review 那行沒寫「只在比 opus 便宜的 session 啟動」（`internal/hook/hook.go:347`）。
